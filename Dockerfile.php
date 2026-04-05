@@ -5,7 +5,9 @@ RUN docker-php-ext-install pdo_mysql \
 
 WORKDIR /var/www/html
 COPY . /var/www/html/
+COPY docker/apache-entrypoint.sh /usr/local/bin/apache-entrypoint.sh
+RUN chmod +x /usr/local/bin/apache-entrypoint.sh
 
 EXPOSE 80
 
-CMD ["sh", "-c", "sed -i \"s/80/${PORT:-80}/g\" /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf && apache2-foreground"]
+CMD ["apache-entrypoint.sh"]

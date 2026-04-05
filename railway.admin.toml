@@ -1,5 +1,4 @@
 [deploy]
-startCommand = "sh -c 'sed -i \"s/80/${PORT:-80}/g\" /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf && apache2-foreground'"
-healthcheckPath = "/login.php"
+healthcheckPath = "/"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
