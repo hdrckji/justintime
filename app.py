@@ -42,6 +42,10 @@ def create_app() -> Flask:
     def index() -> str:
         return render_template("index.html")
 
+    @app.get("/health")
+    def health() -> Any:
+        return jsonify({"status": "ok"}), 200
+
     @app.get("/api/dashboard")
     def dashboard() -> Any:
         with get_conn() as conn:
