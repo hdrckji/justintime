@@ -161,18 +161,13 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
       for ($day = 0; $day < 7; $day++) {
           $date_str = $dates[$day];
           $stmt = $pdo->prepare(
-              'SELECT SEC_TO_TIME(SUM(TIMESTAMPDIFF(SECOND, MIN(timestamp), MAX(timestamp))))
+              'SELECT COALESCE(TIMESTAMPDIFF(SECOND, MIN(timestamp), MAX(timestamp)), 0)
                FROM attendance_events
-               WHERE employee_id = ? AND DATE(timestamp) = ?
-               GROUP BY employee_id'
+               WHERE employee_id = ? AND DATE(timestamp) = ?'
           );
           $stmt->execute([$selected_emp_id, $date_str]);
-          $result = $stmt->fetchColumn();
-          $hours_worked = 0;
-          if ($result) {
-              list($h, $m, $s) = explode(':', $result);
-              $hours_worked = (int) $h + (int) $m / 60 + (int) $s / 3600;
-          }
+          $worked_seconds = (int) $stmt->fetchColumn();
+          $hours_worked = $worked_seconds > 0 ? ($worked_seconds / 3600) : 0;
           $daily_worked[$day] = round($hours_worked, 2);
           $total_worked += $hours_worked;
 
