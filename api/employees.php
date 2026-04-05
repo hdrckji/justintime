@@ -1,0 +1,259 @@
+<?php
+require_once __DIR__ . '/../auth.php';
+require_once __DIR__ . '/../db.php';
+
+require_login('admin');
+
+header('Content-Type: application/json; charset=utf-8');
+
+function table_columns(PDO $pdo, string $table): array
+{
+    $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+    return $pdo->query("SHOW COLUMNS FROM `{$safe}`")->fetchAll(PDO::FETCH_COLUMN);
+}
+
+function has_col(array $cols, string $name): bool
+{
+    return in_array($name, $cols, true);
+}
+
+try {
+    $pdo = get_pdo();
+    $action = $_GET['action'] ?? ($_SERVER['REQUEST_METHOD'] === 'POST' ? 'save' : 'list');
+    $emp_cols = table_columns($pdo, 'employees');
+    $usr_cols = table_columns($pdo, 'users');
+
+    $has_first = has_col($emp_cols, 'first_name');
+    $has_last  = has_col($emp_cols, 'last_name');
+    $has_name  = has_col($emp_cols, 'name');
+    $has_addr  = has_col($emp_cols, 'address');
+    $has_lat   = has_col($emp_cols, 'latitude');
+    $has_lng   = has_col($emp_cols, 'longitude');
+    $has_geo   = has_col($emp_cols, 'geo_radius');
+    $has_vac   = has_col($emp_cols, 'vacation_days');
+    $has_user_employee_id = has_col($usr_cols, 'employee_id');
+
+    if ($action === 'list' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+        $first_expr = $has_first ? "COALESCE(e.first_name, '') AS first_name" : "'' AS first_name";
+        if ($has_last && $has_name) {
+            $last_expr = "COALESCE(e.last_name, COALESCE(e.name, '')) AS last_name";
+        } elseif ($has_last) {
+            $last_expr = "COALESCE(e.last_name, '') AS last_name";
+        } elseif ($has_name) {
+            $last_expr = "COALESCE(e.name, '') AS last_name";
+        } else {
+            $last_expr = "'' AS last_name";
+        }
+
+        $address_expr = $has_addr ? "COALESCE(e.address, '') AS address" : "'' AS address";
+        $lat_expr     = $has_lat ? "e.latitude" : "NULL AS latitude";
+        $lng_expr     = $has_lng ? "e.longitude" : "NULL AS longitude";
+        $geo_expr     = $has_geo ? "COALESCE(e.geo_radius, 200) AS geo_radius" : "200 AS geo_radius";
+        $vac_expr     = $has_vac ? "COALESCE(e.vacation_days, 25) AS vacation_days" : "25 AS vacation_days";
+        $login_expr   = $has_user_employee_id
+            ? "(SELECT u.username FROM users u WHERE u.employee_id = e.id AND u.role = 'employee' LIMIT 1) AS login_username"
+            : "NULL AS login_username";
+
+        $order_by = $has_last && $has_first ? 'e.last_name, e.first_name' : 'e.id DESC';
+
+        $sql = "SELECT e.id,
+                {$first_expr},
+                {$last_expr},
+                e.badge_id, e.active,
+                {$address_expr},
+                {$lat_expr},
+                {$lng_expr},
+                {$geo_expr},
+                {$vac_expr},
+                {$login_expr}
+             FROM employees e
+             ORDER BY {$order_by}";
+
+        $employees = $pdo->query($sql)->fetchAll();
+        json_response(['employees' => $employees]);
+        exit;
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $payload = json_decode(file_get_contents('php://input'), true) ?? [];
+
+        if ($action === 'delete') {
+            $id = (int) $_GET['id'];
+            $stmt = $pdo->prepare('UPDATE employees SET active = 0 WHERE id = ?');
+            $stmt->execute([$id]);
+            json_response(['message' => 'Employe archive.']);
+            exit;
+        }
+
+        if ($action === 'create_access') {
+            if (!$has_user_employee_id) {
+                json_response(['error' => 'Migration incomplète: colonne users.employee_id manquante. Relancez setup.php.'], 500);
+                exit;
+            }
+            $emp_id   = (int) ($payload['employee_id'] ?? 0);
+            $username = trim($payload['username'] ?? '');
+            $password = trim($payload['password'] ?? '');
+            if (!$emp_id || !$username || !$password) {
+                json_response(['error' => 'Champs obligatoires manquants.'], 400); exit;
+            }
+            if (strlen($password) < 6) {
+                json_response(['error' => 'Mot de passe trop court (6 caract. min).'], 400); exit;
+            }
+            $stmt = $pdo->prepare('SELECT id FROM users WHERE employee_id = ?');
+            $stmt->execute([$emp_id]);
+            if ($stmt->fetch()) {
+                json_response(['error' => 'Cet employe a deja un compte.'], 409); exit;
+            }
+            $stmt = $pdo->prepare('SELECT id FROM users WHERE username = ?');
+            $stmt->execute([$username]);
+            if ($stmt->fetch()) {
+                json_response(['error' => 'Ce nom d\'utilisateur est deja pris.'], 409); exit;
+            }
+            $hash = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare('INSERT INTO users (username, password, role, employee_id) VALUES (?, ?, ?, ?)');
+            $stmt->execute([$username, $hash, 'employee', $emp_id]);
+            json_response(['message' => 'Acces cree.', 'username' => $username]);
+            exit;
+        }
+
+        if ($action === 'delete_access') {
+            if (!$has_user_employee_id) {
+                json_response(['error' => 'Migration incomplète: colonne users.employee_id manquante. Relancez setup.php.'], 500);
+                exit;
+            }
+            $emp_id = (int) ($payload['employee_id'] ?? 0);
+            $stmt = $pdo->prepare('DELETE FROM users WHERE employee_id = ? AND role = ?');
+            $stmt->execute([$emp_id, 'employee']);
+            json_response(['message' => 'Acces supprime.']);
+            exit;
+        }
+
+        // Insert ou update employe
+        $id        = $payload['id'] ?? null;
+        $first     = trim($payload['first_name'] ?? '');
+        $last      = trim($payload['last_name'] ?? '');
+        $badge     = trim($payload['badge_id'] ?? '');
+        $active    = (int) ($payload['active'] ?? 1);
+        $address   = trim($payload['address'] ?? '');
+        $latitude  = isset($payload['latitude'])  && $payload['latitude']  !== '' ? (float) $payload['latitude']  : null;
+        $longitude = isset($payload['longitude']) && $payload['longitude'] !== '' ? (float) $payload['longitude'] : null;
+        $geo_radius = (int) ($payload['geo_radius']    ?? 200);
+        $vac_days   = (int) ($payload['vacation_days'] ?? 25);
+
+        if (!$first || !$last || !$badge) {
+            json_response(['error' => 'Tous les champs sont obligatoires.'], 400);
+            exit;
+        }
+
+        if ($id) {
+            $set = [];
+            $vals = [];
+
+            if ($has_first) {
+                $set[] = 'first_name = ?';
+                $vals[] = $first;
+            }
+            if ($has_last) {
+                $set[] = 'last_name = ?';
+                $vals[] = $last;
+            }
+            if (!$has_first && !$has_last && $has_name) {
+                $set[] = 'name = ?';
+                $vals[] = trim($first . ' ' . $last);
+            }
+
+            $set[] = 'badge_id = ?';
+            $vals[] = $badge;
+            $set[] = 'active = ?';
+            $vals[] = $active;
+
+            if ($has_addr) {
+                $set[] = 'address = ?';
+                $vals[] = $address;
+            }
+            if ($has_lat) {
+                $set[] = 'latitude = ?';
+                $vals[] = $latitude;
+            }
+            if ($has_lng) {
+                $set[] = 'longitude = ?';
+                $vals[] = $longitude;
+            }
+            if ($has_geo) {
+                $set[] = 'geo_radius = ?';
+                $vals[] = $geo_radius;
+            }
+            if ($has_vac) {
+                $set[] = 'vacation_days = ?';
+                $vals[] = $vac_days;
+            }
+
+            $vals[] = $id;
+            $stmt = $pdo->prepare('UPDATE employees SET ' . implode(', ', $set) . ' WHERE id = ?');
+            $stmt->execute($vals);
+        } else {
+            $cols = [];
+            $vals = [];
+            $phs  = [];
+
+            if ($has_first) {
+                $cols[] = 'first_name';
+                $vals[] = $first;
+                $phs[] = '?';
+            }
+            if ($has_last) {
+                $cols[] = 'last_name';
+                $vals[] = $last;
+                $phs[] = '?';
+            }
+            if (!$has_first && !$has_last && $has_name) {
+                $cols[] = 'name';
+                $vals[] = trim($first . ' ' . $last);
+                $phs[] = '?';
+            }
+
+            $cols[] = 'badge_id';
+            $vals[] = $badge;
+            $phs[] = '?';
+
+            $cols[] = 'active';
+            $vals[] = $active;
+            $phs[] = '?';
+
+            if ($has_addr) {
+                $cols[] = 'address';
+                $vals[] = $address;
+                $phs[] = '?';
+            }
+            if ($has_lat) {
+                $cols[] = 'latitude';
+                $vals[] = $latitude;
+                $phs[] = '?';
+            }
+            if ($has_lng) {
+                $cols[] = 'longitude';
+                $vals[] = $longitude;
+                $phs[] = '?';
+            }
+            if ($has_geo) {
+                $cols[] = 'geo_radius';
+                $vals[] = $geo_radius;
+                $phs[] = '?';
+            }
+            if ($has_vac) {
+                $cols[] = 'vacation_days';
+                $vals[] = $vac_days;
+                $phs[] = '?';
+            }
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO employees (' . implode(', ', $cols) . ') VALUES (' . implode(', ', $phs) . ')'
+            );
+            $stmt->execute($vals);
+        }
+
+        json_response(['message' => 'Employe enregistre.']);
+    }
+} catch (Throwable $e) {
+    json_response(['error' => $e->getMessage()], 500);
+}

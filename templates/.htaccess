@@ -1,0 +1,16 @@
+# Protege les fichiers de configuration sensibles
+<Files "config.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+<Files "db.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Page d'accueil par defaut
+DirectoryIndex index.php index.html
+
+# Encodage UTF-8
+AddDefaultCharset UTF-8

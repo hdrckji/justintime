@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local environment
+.env
+.DS_Store
+
+# Local database / runtime data
+data/attendance.db
+*.sqlite
+*.sqlite3
+
+# Arduino / editor temp files
+*.tmp
