@@ -7,7 +7,7 @@ try {
     $employees = $pdo
         ->query("SELECT id,
             COALESCE(first_name, '') AS first_name,
-            COALESCE(last_name, COALESCE(name, '')) AS last_name,
+            COALESCE(last_name, '') AS last_name,
             badge_id
          FROM employees WHERE active = 1 ORDER BY last_name, first_name")
         ->fetchAll();
@@ -50,7 +50,7 @@ try {
 
     $recent = $pdo->query(
         "SELECT a.id, a.timestamp, a.event_type, a.source,
-                CONCAT(COALESCE(e.first_name,''), ' ', COALESCE(e.last_name, COALESCE(e.name,''))) AS name,
+                TRIM(CONCAT(COALESCE(e.first_name,''), ' ', COALESCE(e.last_name,''))) AS name,
                 e.badge_id
          FROM attendance_events a
          JOIN employees e ON e.id = a.employee_id

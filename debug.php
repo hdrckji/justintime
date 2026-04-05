@@ -27,7 +27,7 @@ try {
             $test = $pdo->query(
                 "SELECT id,
                     COALESCE(first_name, '') AS first_name,
-                    COALESCE(last_name, COALESCE(name, '')) AS last_name,
+                    COALESCE(last_name, '') AS last_name,
                     badge_id
                  FROM employees LIMIT 3"
             )->fetchAll();

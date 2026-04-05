@@ -14,7 +14,7 @@ $hasWeekStart = in_array('week_start', $scheduledCols, true);
 $employees = $pdo->query(
     "SELECT id,
         COALESCE(first_name, '') AS first_name,
-        COALESCE(last_name, COALESCE(name, '')) AS last_name
+        COALESCE(last_name, '') AS last_name
      FROM employees WHERE active = 1 ORDER BY last_name, first_name"
 )->fetchAll();
 

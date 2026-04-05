@@ -24,7 +24,7 @@ try {
     $stmt = $pdo->prepare(
         "SELECT id,
             COALESCE(first_name,'') AS first_name,
-            COALESCE(last_name, COALESCE(name,'')) AS last_name,
+            COALESCE(last_name,'') AS last_name,
             badge_id,
             COALESCE(vacation_days, 25) AS vacation_days
          FROM employees WHERE id = ?"

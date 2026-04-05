@@ -18,7 +18,7 @@ try {
     $pdo  = get_pdo();
     $stmt = $pdo->prepare(
         "SELECT id,
-                TRIM(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, COALESCE(name, '')))) AS name,
+                TRIM(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, ''))) AS name,
                 badge_id
          FROM employees
          WHERE badge_id = ? AND active = 1"

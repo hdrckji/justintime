@@ -56,7 +56,7 @@ function insert_event(PDO $pdo, int $employee_id, string $event_type, string $so
 
     $stmt = $pdo->prepare(
         "SELECT a.id, a.timestamp, a.event_type, a.source,
-                CONCAT(COALESCE(e.first_name,''), ' ', COALESCE(e.last_name, COALESCE(e.name,''))) AS name,
+                TRIM(CONCAT(COALESCE(e.first_name,''), ' ', COALESCE(e.last_name,''))) AS name,
                 e.badge_id
          FROM attendance_events a
          JOIN employees e ON e.id = a.employee_id

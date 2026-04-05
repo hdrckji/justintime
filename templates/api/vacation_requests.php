@@ -22,7 +22,7 @@ try {
         $sql = "SELECT vr.id, vr.employee_id, vr.start_date, vr.end_date, vr.reason, vr.status, 
                        vr.admin_comment, vr.created_at, vr.updated_at,
                        COALESCE(e.first_name, '') AS emp_first,
-                       COALESCE(e.last_name, COALESCE(e.name, '')) AS emp_last
+                       COALESCE(e.last_name, '') AS emp_last
                 FROM vacation_requests vr
                 JOIN employees e ON vr.employee_id = e.id
                 WHERE 1=1";
