@@ -23,7 +23,10 @@ if (!in_array($event_type, ['in', 'out'], true)) {
 try {
     $pdo  = get_pdo();
     $stmt = $pdo->prepare(
-        'SELECT id, name FROM employees WHERE id = ? AND active = 1'
+        "SELECT id,
+                TRIM(CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, COALESCE(name, '')))) AS name
+         FROM employees
+         WHERE id = ? AND active = 1"
     );
     $stmt->execute([$employee_id]);
     $employee = $stmt->fetch();

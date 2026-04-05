@@ -10,8 +10,8 @@
 const char* WIFI_SSID = "Freebox-661B9B";
 const char* WIFI_PASSWORD = "2hwtxq5brsqcswdmqdnk4m";
 
-const char* SERVER_HOST = "192.168.1.47";
-const uint16_t SERVER_PORT = 8080;
+const char* SERVER_HOST = "justintime-production.up.railway.app";
+const uint16_t SERVER_PORT = 443;
 const char* SERVER_PATH = "/api/attendance/rfid";
 
 constexpr uint8_t SS_PIN = 5;
@@ -252,7 +252,7 @@ void sendBadge(const String& badgeId) {
   showDisplayMessage("Badge detecte", "Identification...", "Envoi...");
 
   HTTPClient http;
-  const String url = "http://" + String(SERVER_HOST) + ":" + String(SERVER_PORT) + String(SERVER_PATH);
+  const String url = "https://" + String(SERVER_HOST) + String(SERVER_PATH);
   const String payload = "{\"badge_id\":\"" + badgeId + "\"}";
 
   http.begin(url);
