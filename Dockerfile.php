@@ -1,13 +1,10 @@
-FROM php:8.2-apache
+FROM php:8.2-cli
 
-RUN docker-php-ext-install pdo_mysql \
-    && a2enmod rewrite
+RUN docker-php-ext-install pdo_mysql
 
-WORKDIR /var/www/html
-COPY . /var/www/html/
-COPY docker/apache-entrypoint.sh /usr/local/bin/apache-entrypoint.sh
-RUN chmod +x /usr/local/bin/apache-entrypoint.sh
+WORKDIR /app
+COPY . /app/
 
-EXPOSE 80
+EXPOSE 8080
 
-CMD ["apache-entrypoint.sh"]
+CMD ["sh", "-c", "php -S 0.0.0.0:${PORT:-8080} -t /app"]

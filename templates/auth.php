@@ -30,7 +30,7 @@ function get_auth_user(): ?array
     ];
 }
 
-function require_login(string $required_role = null): void
+function require_login(?string $required_role = null): void
 {
     if (!is_logged_in()) {
         header('Location: login.php');
