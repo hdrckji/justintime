@@ -91,7 +91,7 @@ function ensure_scheduled_hours_schema(PDO $pdo): void
 try {
     $pdo = get_pdo();
     ensure_scheduled_hours_schema($pdo);
-    $action = $_GET['action'] ?? 'get';
+    $action = $_GET['action'] ?? ($_SERVER['REQUEST_METHOD'] === 'POST' ? 'save' : 'get');
 
     if ($action === 'get') {
         $emp_id = (int) ($_GET['employee_id'] ?? 0);

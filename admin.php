@@ -747,7 +747,7 @@ $user = get_auth_user();
       }
 
       try {
-        await api('api/scheduled_hours.php', {
+        await api('api/scheduled_hours.php?action=save', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
