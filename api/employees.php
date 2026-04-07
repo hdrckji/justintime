@@ -15,9 +15,11 @@ function table_columns(PDO $pdo, string $table): array
 function table_exists(PDO $pdo, string $table): bool
 {
     $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
-    $stmt = $pdo->prepare('SHOW TABLES LIKE ?');
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+    );
     $stmt->execute([$safe]);
-    return (bool) $stmt->fetchColumn();
+    return (int) $stmt->fetchColumn() > 0;
 }
 
 function has_col(array $cols, string $name): bool
