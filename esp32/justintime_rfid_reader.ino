@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <SPI.h>
 #include <MFRC522.h>
@@ -7,12 +8,14 @@
 #include <Adafruit_SSD1306.h>
 #include <time.h>
 
-const char* WIFI_SSID = "Freebox-661B9B";
-const char* WIFI_PASSWORD = "2hwtxq5brsqcswdmqdnk4m";
+const char* WIFI_SSID = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-const char* SERVER_HOST = "justintime-production.up.railway.app";
-const uint16_t SERVER_PORT = 443;
-const char* SERVER_PATH = "/api/attendance/rfid";
+const char* SITE_BASE_URL = "https://diligent-embrace-production.up.railway.app";
+const char* RFID_ENDPOINT = "/api/attendance/rfid";
+const char* DEVICE_ID = "ESP32-RFID-01";
+const char* DEVICE_LABEL = "Entree";
+const char* FIRMWARE_VERSION = "jit-esp32-2.0";
 
 constexpr uint8_t SS_PIN = 5;
 constexpr uint8_t RST_PIN = 4;
@@ -35,10 +38,14 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 bool oledReady = false;
 
 String lastUid = "";
+String idleMessage = "Passe un badge";
+String siteName = "JustInTime";
 unsigned long lastScanAt = 0;
-const unsigned long SCAN_COOLDOWN_MS = 2000;
+unsigned long scanCooldownMs = 2000;
 unsigned long lastClockRefreshAt = 0;
-const unsigned long CLOCK_REFRESH_MS = 1000;
+unsigned long clockRefreshMs = 1000;
+unsigned long lastConfigSyncAt = 0;
+unsigned long configRefreshMs = 300000;
 
 String formatUid(const MFRC522::Uid& uid) {
   String result;
@@ -57,6 +64,13 @@ String formatUid(const MFRC522::Uid& uid) {
 
   result.toUpperCase();
   return result;
+}
+
+String escapeJson(const String& input) {
+  String output = input;
+  output.replace("\\", "\\\\");
+  output.replace("\"", "\\\"");
+  return output;
 }
 
 String extractJsonValue(const String& body, const String& key) {
@@ -84,6 +98,35 @@ String extractJsonValue(const String& body, const String& key) {
   return body.substring(firstQuote + 1, secondQuote);
 }
 
+long extractJsonLongValue(const String& body, const String& key, long fallbackValue) {
+  const String needle = "\"" + key + "\"";
+  const int keyPos = body.indexOf(needle);
+  if (keyPos < 0) {
+    return fallbackValue;
+  }
+
+  const int colonPos = body.indexOf(':', keyPos + needle.length());
+  if (colonPos < 0) {
+    return fallbackValue;
+  }
+
+  int valueStart = colonPos + 1;
+  while (valueStart < body.length() && (body[valueStart] == ' ' || body[valueStart] == '\n' || body[valueStart] == '\r' || body[valueStart] == '\t')) {
+    valueStart++;
+  }
+
+  int valueEnd = valueStart;
+  while (valueEnd < body.length() && (isDigit(body[valueEnd]) || body[valueEnd] == '-')) {
+    valueEnd++;
+  }
+
+  if (valueEnd == valueStart) {
+    return fallbackValue;
+  }
+
+  return body.substring(valueStart, valueEnd).toInt();
+}
+
 String getCurrentTimeString() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo, 100)) {
@@ -102,6 +145,24 @@ String formatTimestampForDisplay(const String& isoTimestamp) {
   }
 
   return "";
+}
+
+bool beginHttpClient(HTTPClient& http, const String& url) {
+  if (url.startsWith("https://")) {
+    static WiFiClientSecure secureClient;
+    secureClient.setInsecure();
+    return http.begin(secureClient, url);
+  }
+
+  return http.begin(url);
+}
+
+String buildApiUrl(const String& query = "") {
+  String url = String(SITE_BASE_URL) + String(RFID_ENDPOINT);
+  if (query.length() > 0) {
+    url += query;
+  }
+  return url;
 }
 
 void syncClock() {
@@ -143,7 +204,7 @@ void showDisplayMessage(const String& line1, const String& line2 = "", const Str
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  drawCenteredText("JustInTime", 0, 1);
+  drawCenteredText(siteName, 0, 1);
   drawCenteredText(line1, 18, 1);
   drawCenteredText(line2, 34, 1);
   drawCenteredText(line3, 50, 1);
@@ -171,9 +232,9 @@ void showIdleScreen() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  drawCenteredText("JustInTime", 0, 1);
+  drawCenteredText(siteName, 0, 1);
   drawCenteredText(getCurrentTimeString(), 18, 2);
-  drawCenteredText("Passe un badge", 50, 1);
+  drawCenteredText(idleMessage, 50, 1);
 
   display.display();
 }
@@ -216,47 +277,114 @@ void connectWifi() {
   const String espIp = WiFi.localIP().toString();
 
   Serial.println();
-  Serial.print("Wi-Fi connecté, IP ESP32 = ");
+  Serial.print("Wi-Fi connecte, IP ESP32 = ");
   Serial.println(espIp);
-  Serial.print("Serveur cible = ");
-  Serial.print(SERVER_HOST);
-  Serial.print(":");
-  Serial.print(SERVER_PORT);
-  Serial.println(SERVER_PATH);
+  Serial.print("Site cible = ");
+  Serial.println(SITE_BASE_URL);
 
   syncClock();
-  showDisplayMessage("Wi-Fi connecte", espIp, "Pret pour badge");
+  showDisplayMessage("Wi-Fi connecte", espIp, "Sync site...");
 }
 
-void testServerConnection() {
-  WiFiClient client;
-  Serial.print("Test TCP vers serveur... ");
-
-  if (client.connect(SERVER_HOST, SERVER_PORT)) {
-    Serial.println("OK");
-    client.stop();
-    showDisplayMessage("Serveur joignable", String(SERVER_HOST) + ":" + String(SERVER_PORT), "Pret pour badge");
-  } else {
-    Serial.println("ECHEC");
-    showDisplayMessage("Serveur indisponible", String(SERVER_HOST) + ":" + String(SERVER_PORT), "Verifie le Mac");
+void syncRemoteConfig(bool showFeedback = false) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
   }
+
+  HTTPClient http;
+  const String url = buildApiUrl(String("?action=config&device_id=") + DEVICE_ID);
+
+  if (!beginHttpClient(http, url)) {
+    Serial.println("Impossible d'ouvrir la connexion HTTP pour la config.");
+    return;
+  }
+
+  http.addHeader("Accept", "application/json");
+  http.setTimeout(10000);
+
+  if (showFeedback) {
+    showDisplayMessage("Connexion site", "Recuperation", "configuration...");
+  }
+
+  const int httpCode = http.GET();
+  const String body = http.getString();
+
+  Serial.println("==== CONFIG SITE ====");
+  Serial.print("GET ");
+  Serial.println(url);
+  Serial.print("HTTP code: ");
+  Serial.println(httpCode);
+  Serial.print("Reponse  : ");
+  Serial.println(body);
+  Serial.println("=====================");
+
+  if (httpCode == 200) {
+    const String remoteSiteName = extractJsonValue(body, "site_name");
+    const String remoteMessage = extractJsonValue(body, "display_message");
+    const long remoteCooldown = extractJsonLongValue(body, "cooldown_ms", static_cast<long>(scanCooldownMs));
+    const long remoteClockRefresh = extractJsonLongValue(body, "clock_refresh_ms", static_cast<long>(clockRefreshMs));
+    const long remoteConfigRefresh = extractJsonLongValue(body, "config_refresh_ms", static_cast<long>(configRefreshMs));
+
+    if (remoteSiteName.length() > 0) {
+      siteName = remoteSiteName;
+    }
+    if (remoteMessage.length() > 0) {
+      idleMessage = remoteMessage;
+    }
+    if (remoteCooldown >= 500 && remoteCooldown <= 15000) {
+      scanCooldownMs = static_cast<unsigned long>(remoteCooldown);
+    }
+    if (remoteClockRefresh >= 250 && remoteClockRefresh <= 10000) {
+      clockRefreshMs = static_cast<unsigned long>(remoteClockRefresh);
+    }
+    if (remoteConfigRefresh >= 10000) {
+      configRefreshMs = static_cast<unsigned long>(remoteConfigRefresh);
+    }
+
+    lastConfigSyncAt = millis();
+
+    if (showFeedback) {
+      showDisplayMessage("Site synchronise", String(DEVICE_ID), idleMessage);
+      delay(1200);
+    }
+  } else if (showFeedback) {
+    showDisplayMessage("Site indisponible", "HTTP " + String(httpCode), "Mode local OK");
+    delay(1200);
+  }
+
+  http.end();
 }
 
 void sendBadge(const String& badgeId) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Wi-Fi non connecté.");
+    Serial.println("Wi-Fi non connecte.");
     showDisplayMessage("Wi-Fi non connecte", "Reconnexion...");
     return;
   }
 
-  showDisplayMessage("Badge detecte", "Identification...", "Envoi...");
+  showDisplayMessage("Badge detecte", "Identification...", "Envoi au site...");
 
   HTTPClient http;
-  const String url = "https://" + String(SERVER_HOST) + String(SERVER_PATH);
-  const String payload = "{\"badge_id\":\"" + badgeId + "\"}";
+  const String url = buildApiUrl();
+  const String payload = String("{") +
+    "\"badge_id\":\"" + escapeJson(badgeId) + "\"," +
+    "\"device_id\":\"" + escapeJson(String(DEVICE_ID)) + "\"," +
+    "\"device_label\":\"" + escapeJson(String(DEVICE_LABEL)) + "\"," +
+    "\"firmware\":\"" + escapeJson(String(FIRMWARE_VERSION)) + "\"," +
+    "\"ip\":\"" + escapeJson(WiFi.localIP().toString()) + "\"," +
+    "\"rssi\":" + String(WiFi.RSSI()) +
+    "}";
 
-  http.begin(url);
+  if (!beginHttpClient(http, url)) {
+    Serial.println("Impossible d'ouvrir la connexion HTTP pour le badge.");
+    showDisplayMessage("Erreur connexion", "HTTP init KO", "Reessaie");
+    return;
+  }
+
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("Accept", "application/json");
+  http.addHeader("User-Agent", String("JustInTime-ESP32/") + FIRMWARE_VERSION);
+  http.setTimeout(12000);
 
   const int httpCode = http.POST(payload);
   const String body = http.getString();
@@ -264,15 +392,18 @@ void sendBadge(const String& badgeId) {
   Serial.println("------------------------------");
   Serial.print("Badge lu : ");
   Serial.println(badgeId);
+  Serial.print("POST URL : ");
+  Serial.println(url);
   Serial.print("HTTP code: ");
   Serial.println(httpCode);
-  Serial.print("Réponse  : ");
+  Serial.print("Reponse  : ");
   Serial.println(body);
   Serial.println("------------------------------");
 
   String personName = extractJsonValue(body, "name");
   const String serverMessage = extractJsonValue(body, "message");
   const String errorMessage = extractJsonValue(body, "error");
+  const String eventType = extractJsonValue(body, "event_type");
   String scanTime = formatTimestampForDisplay(extractJsonValue(body, "timestamp"));
 
   if (scanTime.length() == 0) {
@@ -289,9 +420,9 @@ void sendBadge(const String& badgeId) {
   if (httpCode == 200) {
     String actionLine = "OK";
 
-    if (serverMessage.indexOf("sortie") >= 0) {
+    if (eventType == "out" || serverMessage.indexOf("sortie") >= 0) {
       actionLine = "SORTIE";
-    } else if (serverMessage.indexOf("entree") >= 0) {
+    } else if (eventType == "in" || serverMessage.indexOf("entree") >= 0) {
       actionLine = "ENTREE";
     }
 
@@ -301,7 +432,7 @@ void sendBadge(const String& badgeId) {
       scanTime
     );
   } else if (httpCode == 404) {
-    showDisplayMessage("Badge inconnu", badgeId, errorMessage);
+    showDisplayMessage("Badge inconnu", badgeId, errorMessage.length() > 0 ? errorMessage : "Ajoute-le au site");
   } else {
     showDisplayMessage("Erreur serveur", "HTTP " + String(httpCode), errorMessage.length() > 0 ? errorMessage : "Reessaie");
   }
@@ -318,12 +449,12 @@ void setup() {
 
   initDisplay();
   connectWifi();
-  testServerConnection();
+  syncRemoteConfig(true);
 
   SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, SS_PIN);
   mfrc522.PCD_Init();
 
-  Serial.println("Lecteur RFID prêt. Passe une carte devant le RC522...");
+  Serial.println("Lecteur RFID pret. Passe une carte devant le RC522...");
   showIdleScreen();
   lastClockRefreshAt = millis();
 }
@@ -331,10 +462,15 @@ void setup() {
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     connectWifi();
+    syncRemoteConfig(true);
+  }
+
+  if (millis() - lastConfigSyncAt >= configRefreshMs) {
+    syncRemoteConfig(false);
   }
 
   if (!mfrc522.PICC_IsNewCardPresent()) {
-    if (millis() - lastClockRefreshAt >= CLOCK_REFRESH_MS) {
+    if (millis() - lastClockRefreshAt >= clockRefreshMs) {
       showIdleScreen();
       lastClockRefreshAt = millis();
     }
@@ -349,7 +485,7 @@ void loop() {
 
   const String uid = formatUid(mfrc522.uid);
 
-  if (uid == lastUid && millis() - lastScanAt < SCAN_COOLDOWN_MS) {
+  if (uid == lastUid && millis() - lastScanAt < scanCooldownMs) {
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     delay(250);

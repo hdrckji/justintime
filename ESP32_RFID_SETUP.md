@@ -1,9 +1,19 @@
 # Configuration ESP32 + RFID pour JustInTime
 
-Ce projet est déjà prêt côté serveur : `app.py` expose l'API `POST /api/attendance/rfid` et attend un JSON de la forme :
+Le site JustInTime peut maintenant dialoguer **directement** avec l'ESP32 :
+
+- **remontée** des scans RFID vers le site via `POST /api/attendance/rfid`
+- **descente** de la configuration vers l'ESP32 via `GET /api/attendance/rfid?action=config&device_id=...`
+
+Exemple de JSON envoyé par l'ESP32 :
 
 ```json
-{ "badge_id": "A4-7B-2C-91" }
+{
+  "badge_id": "A4-7B-2C-91",
+  "device_id": "ESP32-RFID-01",
+  "device_label": "Entree",
+  "firmware": "jit-esp32-2.0"
+}
 ```
 
 ## 1. Matériel supposé
@@ -11,12 +21,15 @@ Ce projet est déjà prêt côté serveur : `app.py` expose l'API `POST /api/att
 Ce guide part du cas le plus courant :
 - `ESP32 DevKit`
 - lecteur RFID `RC522 / MFRC522`
+- écran OLED `SSD1306` (optionnel)
 - cartes ou badges `13.56 MHz`
 - câbles Dupont
 
-> Si ton lecteur est un `PN532`, le câblage et le code changent. Dans ce cas, dis-moi juste le modèle exact.
+> Si ton lecteur est un `PN532`, le câblage et le sketch changent.
 
-## 2. Câblage ESP32 ↔ RC522
+## 2. Câblage ESP32 ↔ RC522 / OLED
+
+### RC522
 
 | RC522 | ESP32 |
 |---|---|
@@ -26,92 +39,93 @@ Ce guide part du cas le plus courant :
 | `SCK` | `GPIO 18` |
 | `MOSI` | `GPIO 23` |
 | `MISO` | `GPIO 19` |
-| `RST` | `GPIO 22` |
+| `RST` | `GPIO 4` |
 | `IRQ` | non connecté |
 
-## 3. Préparer le serveur du projet
+### OLED SSD1306 (I2C)
 
-Depuis le dossier du projet :
+| OLED | ESP32 |
+|---|---|
+| `VCC` | `3V3` |
+| `GND` | `GND` |
+| `SDA` | `GPIO 21` |
+| `SCL` | `GPIO 22` |
 
-```bash
-python3 -m pip install -r requirements.txt
-python3 app.py
+## 3. URL du site utilisée par l'ESP32
+
+Le sketch pointe directement vers le site :
+
+```cpp
+const char* SITE_BASE_URL = "https://diligent-embrace-production.up.railway.app";
+const char* RFID_ENDPOINT = "/api/attendance/rfid";
 ```
 
-Le serveur écoute déjà sur :
-- `http://localhost:5001`
-- et sur le réseau local via `0.0.0.0:5001`
+## 4. Avant de flasher l'ESP32
 
-Pour récupérer l'IP locale de ton Mac :
+Dans `esp32/justintime_rfid_reader.ino`, complète :
 
-```bash
-ipconfig getifaddr en0
-```
-
-Exemple : `192.168.1.50`
-
-## 4. Flash du code ESP32
-
-Un sketch prêt à l'emploi a été ajouté ici :
-
-- `esp32/justintime_rfid_reader.ino`
-
-À modifier avant upload :
 1. `WIFI_SSID`
 2. `WIFI_PASSWORD`
-3. `SERVER_URL`
+3. `DEVICE_ID`
+4. `DEVICE_LABEL`
 
 Exemple :
 
 ```cpp
-const char* SERVER_URL = "http://192.168.1.50:5001/api/attendance/rfid";
+const char* WIFI_SSID = "MonWifi";
+const char* WIFI_PASSWORD = "MonMotDePasse";
+const char* DEVICE_ID = "ESP32-RFID-ACCUEIL";
+const char* DEVICE_LABEL = "Accueil";
 ```
 
-## 5. Comment lier une vraie carte au projet
+## 5. Ce que fait le sketch
 
-Le backend compare simplement la valeur reçue avec le champ `badge_id` de l'employé.
+Au démarrage, l'ESP32 :
+1. se connecte au Wi-Fi,
+2. synchronise l'heure NTP,
+3. récupère la configuration distante du site,
+4. attend un badge,
+5. envoie l'UID du badge au site en HTTPS,
+6. affiche le retour `ENTREE` / `SORTIE` sur l'écran OLED.
 
-Donc le plus simple est :
-1. ouvrir le moniteur série de l'ESP32,
-2. scanner une carte,
-3. récupérer son UID (ex: `A4-7B-2C-91`),
-4. mettre cette valeur comme `badge_id` pour l'employé concerné.
+## 6. Associer une vraie carte à un employé
 
-Tu peux soit :
-- remplacer les badges de démo `RFID-1001`, `RFID-1002`, etc.,
-- soit garder ces codes et faire une table de correspondance dans l'ESP32.
+Le site compare la valeur reçue avec le champ `badge_id` de l'employé.
 
-## 6. Test rapide
+Donc :
+1. ouvre le moniteur série,
+2. scanne une carte,
+3. récupère son UID,
+4. colle cet UID dans le badge RFID du collaborateur dans l'admin JustInTime.
 
-1. Lance `app.py`
-2. Mets ton Mac et l'ESP32 sur le même Wi-Fi
-3. Ouvre le dashboard dans le navigateur
-4. Passe une carte devant le lecteur
-5. Vérifie dans le moniteur série :
-   - l'UID lu,
-   - le code HTTP (`200` attendu),
-   - la réponse JSON du serveur
+## 7. Test rapide
 
-## 7. Dépannage
+1. flashe `esp32/justintime_rfid_reader.ino`
+2. ouvre le moniteur série (`115200` bauds)
+3. vérifie que l'ESP32 obtient une IP Wi-Fi
+4. vérifie qu'il récupère la config du site
+5. passe un badge
+6. vérifie la réponse HTTP (`200` attendu)
 
-### Rien ne se lit
-- vérifie le **3.3V**, pas le `5V`
-- vérifie `GPIO 5 / 18 / 19 / 22 / 23`
-- rapproche bien la carte du lecteur
+## 8. Dépannage
 
-### Lecture OK mais pas d'envoi HTTP
+### Le badge se lit mais rien n'arrive sur le site
 - vérifie le Wi-Fi
-- vérifie `SERVER_URL`
-- vérifie que `app.py` tourne encore sur le Mac
-- vérifie le pare-feu macOS si besoin
+- vérifie `SITE_BASE_URL`
+- vérifie que Railway est bien en ligne
+- regarde le code HTTP dans le moniteur série
 
 ### Réponse `Badge inconnu`
 - le scan fonctionne, mais le `badge_id` n'existe pas encore dans la base
-- il faut enregistrer ce UID pour un employé
+- il faut enregistrer cet UID pour l'employé concerné
+
+### L'écran OLED reste noir
+- vérifie `GPIO 21/22`
+- vérifie l'adresse I2C (`0x3C` dans le sketch)
+- vérifie l'alimentation en `3.3V`
 
 ---
 
-Si tu veux, je peux maintenant t'aider à faire la **prochaine étape** :
-1. retrouver le **modèle exact** de ton lecteur,
-2. adapter le câblage si besoin,
-3. ou préparer une version avec **association UID → employé** automatiquement.
+Si tu veux, l'étape suivante peut être :
+- ajouter un **bouton de resynchronisation** sur l'ESP32,
+- ou afficher sur le site le **dernier ESP32 connecté** avec son état réseau.
