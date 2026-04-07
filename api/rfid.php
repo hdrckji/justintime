@@ -81,6 +81,10 @@ try {
 
     json_response([
         'message' => "{$employee['name']} enregistre: $action.",
+        'name' => $event['name'] ?? $employee['name'],
+        'badge_id' => $event['badge_id'] ?? $badge_id,
+        'event_type' => $event['event_type'] ?? $next_type,
+        'timestamp' => $event['timestamp'] ?? date(DATE_ATOM),
         'event'   => $event,
         'server_time' => date(DATE_ATOM),
         'device' => [

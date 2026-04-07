@@ -304,5 +304,18 @@ try {
         json_response(['message' => 'Employe enregistre.']);
     }
 } catch (Throwable $e) {
-    json_response(['error' => $e->getMessage()], 500);
+    $message = $e->getMessage();
+    $status = 500;
+
+    if ($e instanceof PDOException) {
+        $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
+        if ($sqlState === '23000') {
+            $status = 409;
+            $message = stripos($message, 'badge') !== false
+                ? 'Ce badge RFID est deja attribue a un autre employe.'
+                : 'Cette modification entre en conflit avec une valeur deja existante.';
+        }
+    }
+
+    json_response(['error' => $message], $status);
 }

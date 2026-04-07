@@ -8,8 +8,8 @@
 #include <Adafruit_SSD1306.h>
 #include <time.h>
 
-const char* WIFI_SSID = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* WIFI_SSID = "Freebox-661B9B";
+const char* WIFI_PASSWORD = "2hwtxq5brsqcswdmqdnk4m";
 
 const char* SITE_BASE_URL = "https://diligent-embrace-production.up.railway.app";
 const char* RFID_ENDPOINT = "/api/attendance/rfid";
@@ -147,14 +147,20 @@ String formatTimestampForDisplay(const String& isoTimestamp) {
   return "";
 }
 
-bool beginHttpClient(HTTPClient& http, const String& url) {
+bool beginHttpClient(HTTPClient& http, const String& url, WiFiClientSecure& secureClient, WiFiClient& plainClient) {
+  http.setReuse(false);
+  http.useHTTP10(true);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
   if (url.startsWith("https://")) {
-    static WiFiClientSecure secureClient;
+    secureClient.stop();
     secureClient.setInsecure();
+    secureClient.setTimeout(15000);
     return http.begin(secureClient, url);
   }
 
-  return http.begin(url);
+  plainClient.stop();
+  return http.begin(plainClient, url);
 }
 
 String buildApiUrl(const String& query = "") {
@@ -292,9 +298,11 @@ void syncRemoteConfig(bool showFeedback = false) {
   }
 
   HTTPClient http;
+  WiFiClientSecure secureClient;
+  WiFiClient plainClient;
   const String url = buildApiUrl(String("?action=config&device_id=") + DEVICE_ID);
 
-  if (!beginHttpClient(http, url)) {
+  if (!beginHttpClient(http, url, secureClient, plainClient)) {
     Serial.println("Impossible d'ouvrir la connexion HTTP pour la config.");
     return;
   }
@@ -318,7 +326,15 @@ void syncRemoteConfig(bool showFeedback = false) {
   Serial.println(body);
   Serial.println("=====================");
 
-  if (httpCode == 200) {
+  if (httpCode < 0) {
+    const String httpError = http.errorToString(httpCode);
+    Serial.print("Erreur HTTP config: ");
+    Serial.println(httpError);
+    if (showFeedback) {
+      showDisplayMessage("Config impossible", "HTTP " + String(httpCode), httpError);
+      delay(1200);
+    }
+  } else if (httpCode == 200) {
     const String remoteSiteName = extractJsonValue(body, "site_name");
     const String remoteMessage = extractJsonValue(body, "display_message");
     const long remoteCooldown = extractJsonLongValue(body, "cooldown_ms", static_cast<long>(scanCooldownMs));
@@ -365,6 +381,8 @@ void sendBadge(const String& badgeId) {
   showDisplayMessage("Badge detecte", "Identification...", "Envoi au site...");
 
   HTTPClient http;
+  WiFiClientSecure secureClient;
+  WiFiClient plainClient;
   const String url = buildApiUrl();
   const String payload = String("{") +
     "\"badge_id\":\"" + escapeJson(badgeId) + "\"," +
@@ -375,7 +393,7 @@ void sendBadge(const String& badgeId) {
     "\"rssi\":" + String(WiFi.RSSI()) +
     "}";
 
-  if (!beginHttpClient(http, url)) {
+  if (!beginHttpClient(http, url, secureClient, plainClient)) {
     Serial.println("Impossible d'ouvrir la connexion HTTP pour le badge.");
     showDisplayMessage("Erreur connexion", "HTTP init KO", "Reessaie");
     return;
@@ -388,6 +406,26 @@ void sendBadge(const String& badgeId) {
 
   const int httpCode = http.POST(payload);
   const String body = http.getString();
+
+  if (httpCode < 0) {
+    const String httpError = http.errorToString(httpCode);
+    Serial.println("------------------------------");
+    Serial.print("Badge lu : ");
+    Serial.println(badgeId);
+    Serial.print("POST URL : ");
+    Serial.println(url);
+    Serial.print("HTTP erreur: ");
+    Serial.print(httpCode);
+    Serial.print(" -> ");
+    Serial.println(httpError);
+    Serial.println("------------------------------");
+    http.end();
+    showDisplayMessage("Connexion site KO", "HTTP " + String(httpCode), httpError);
+    delay(2500);
+    showIdleScreen();
+    lastClockRefreshAt = millis();
+    return;
+  }
 
   Serial.println("------------------------------");
   Serial.print("Badge lu : ");

@@ -425,8 +425,13 @@ $user = get_auth_user();
         headers: { 'Content-Type': 'application/json', ...opts.headers },
         ...opts,
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Erreur serveur');
+      const raw = await res.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
+      if (!res.ok) {
+        const fallback = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+        throw new Error(data.error || fallback || `Erreur serveur (${res.status})`);
+      }
       return data;
     }
 
