@@ -12,6 +12,14 @@ function table_columns(PDO $pdo, string $table): array
     return $pdo->query("SHOW COLUMNS FROM `{$safe}`")->fetchAll(PDO::FETCH_COLUMN);
 }
 
+function table_exists(PDO $pdo, string $table): bool
+{
+    $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+    $stmt = $pdo->prepare('SHOW TABLES LIKE ?');
+    $stmt->execute([$safe]);
+    return (bool) $stmt->fetchColumn();
+}
+
 function has_col(array $cols, string $name): bool
 {
     return in_array($name, $cols, true);
@@ -34,6 +42,7 @@ try {
     $has_user_employee_id = has_col($usr_cols, 'employee_id');
 
     if ($action === 'list' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+        $include_inactive = isset($_GET['include_inactive']) && $_GET['include_inactive'] === '1';
         $first_expr = $has_first ? "COALESCE(e.first_name, '') AS first_name" : "'' AS first_name";
         if ($has_last && $has_name) {
             $last_expr = "COALESCE(e.last_name, COALESCE(e.name, '')) AS last_name";
@@ -55,6 +64,7 @@ try {
             : "NULL AS login_username";
 
         $order_by = $has_last && $has_first ? 'e.last_name, e.first_name' : 'e.id DESC';
+        $where    = $include_inactive ? '' : 'WHERE e.active = 1';
 
         $sql = "SELECT e.id,
                 {$first_expr},
@@ -67,6 +77,7 @@ try {
                 {$vac_expr},
                 {$login_expr}
              FROM employees e
+             {$where}
              ORDER BY {$order_by}";
 
         $employees = $pdo->query($sql)->fetchAll();
@@ -78,11 +89,47 @@ try {
         $payload = json_decode(file_get_contents('php://input'), true) ?? [];
 
         if ($action === 'delete') {
-            $id = (int) $_GET['id'];
-            $stmt = $pdo->prepare('UPDATE employees SET active = 0 WHERE id = ?');
-            $stmt->execute([$id]);
-            json_response(['message' => 'Employe archive.']);
-            exit;
+            $id = (int) ($_GET['id'] ?? 0);
+            if ($id <= 0) {
+                json_response(['error' => 'Identifiant employe invalide.'], 400);
+                exit;
+            }
+
+            try {
+                $stmt = $pdo->prepare('SELECT id FROM employees WHERE id = ? LIMIT 1');
+                $stmt->execute([$id]);
+                if (!$stmt->fetch()) {
+                    json_response(['error' => 'Employe introuvable.'], 404);
+                    exit;
+                }
+
+                $pdo->beginTransaction();
+
+                if ($has_user_employee_id) {
+                    $stmt = $pdo->prepare('DELETE FROM users WHERE employee_id = ?');
+                    $stmt->execute([$id]);
+                }
+
+                foreach (['attendance_events', 'absences', 'scheduled_hours', 'vacation_requests'] as $table) {
+                    if (!table_exists($pdo, $table)) {
+                        continue;
+                    }
+                    $stmt = $pdo->prepare("DELETE FROM `{$table}` WHERE employee_id = ?");
+                    $stmt->execute([$id]);
+                }
+
+                $stmt = $pdo->prepare('DELETE FROM employees WHERE id = ?');
+                $stmt->execute([$id]);
+                $pdo->commit();
+
+                json_response(['message' => 'Employe supprime definitivement.']);
+                exit;
+            } catch (Throwable $deleteError) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $deleteError;
+            }
         }
 
         if ($action === 'create_access') {

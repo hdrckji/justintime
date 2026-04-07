@@ -216,8 +216,11 @@ try {
     }
 
     $count = (int) $pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn();
+    $seed_demo_raw = strtolower((string) env_or_default('JIT_SEED_DEMO_EMPLOYEES', '0'));
+    $should_seed_demo = (isset($_GET['seed_demo']) && $_GET['seed_demo'] === '1')
+        || in_array($seed_demo_raw, ['1', 'true', 'yes', 'on'], true);
 
-    if ($count === 0) {
+    if ($count === 0 && $should_seed_demo) {
         $employees = [
             ['Alice', 'Martin'],
             ['Benoit', 'Lefevre'],
@@ -244,22 +247,27 @@ try {
         $stmt = $pdo->prepare(
             'INSERT INTO employees (first_name, last_name, badge_id) VALUES (?, ?, ?)'
         );
+        $created_employee_ids = [];
         foreach ($employees as $i => $names) {
             $stmt->execute([$names[0], $names[1], 'RFID-' . (1001 + $i)]);
+            $created_employee_ids[] = (int) $pdo->lastInsertId();
         }
 
         // Horaire par defaut : 8h du lundi au vendredi
         $stmt_hours = $pdo->prepare(
             'INSERT INTO scheduled_hours (employee_id, day_of_week, hours) VALUES (?, ?, ?)'
         );
-        for ($emp_id = 1; $emp_id <= 20; $emp_id++) {
+        foreach ($created_employee_ids as $emp_id) {
             for ($day = 1; $day <= 5; $day++) { // 1=lundi, 5=vendredi
                 $stmt_hours->execute([$emp_id, $day, 8.0]);
             }
         }
 
-        $output[] = '✅ 20 employes crees (badges RFID-1001 a RFID-1020).';
+        $output[] = '✅ 20 employes de demo crees (badges RFID-1001 a RFID-1020).';
         $output[] = '✅ Horaires par defaut (8h/jour, lundi-vendredi).';
+    } elseif ($count === 0) {
+        $output[] = 'ℹ️  Aucun employe de demo cree automatiquement.';
+        $output[] = 'ℹ️  Ajoutez vos collaborateurs depuis l\'interface admin.';
     } else {
         $output[] = "ℹ️  Employes deja presents ($count). Aucun ajout.";
     }
