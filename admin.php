@@ -450,6 +450,10 @@ $user = get_auth_user();
 
     async function loadEmployees() {
       try {
+        const prevAbsValue = els.absEmployee.value;
+        const prevHoursValue = els.hoursEmployee.value;
+        const currentEditId = els.empId.value;
+
         const data = await api('api/employees.php?action=list');
         empCache = data.employees;
         els.employeesList.innerHTML = data.employees.map(e => `
@@ -469,12 +473,23 @@ $user = get_auth_user();
             </div>
           </div>
         `).join('');
-        els.absEmployee.innerHTML = `<option>-- Choisir --</option>` + data.employees.map(e => `
+
+        const optionsHtml = `<option value="">-- Choisir --</option>` + data.employees.map(e => `
           <option value="${e.id}">${e.first_name} ${e.last_name}</option>
         `).join('');
-        els.hoursEmployee.innerHTML = `<option>-- Choisir --</option>` + data.employees.map(e => `
-          <option value="${e.id}">${e.first_name} ${e.last_name}</option>
-        `).join('');
+
+        els.absEmployee.innerHTML = optionsHtml;
+        els.hoursEmployee.innerHTML = optionsHtml;
+
+        const existingIds = new Set(data.employees.map(e => String(e.id)));
+        const preferredId = currentEditId || prevHoursValue;
+
+        if (existingIds.has(prevAbsValue)) {
+          els.absEmployee.value = prevAbsValue;
+        }
+        if (existingIds.has(preferredId)) {
+          els.hoursEmployee.value = preferredId;
+        }
       } catch (e) { showToast(e.message, true); }
     }
 
