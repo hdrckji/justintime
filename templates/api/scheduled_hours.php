@@ -15,6 +15,26 @@ function monday_of(string $date): string
     return date('Y-m-d', strtotime('monday this week', $ts));
 }
 
+function employee_exists(PDO $pdo, int $employeeId): bool
+{
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM employees WHERE id = ?');
+    $stmt->execute([$employeeId]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function scheduled_hours_fk_exists(PDO $pdo): bool
+{
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM information_schema.referential_constraints
+         WHERE constraint_schema = DATABASE()
+           AND table_name = 'scheduled_hours'
+           AND constraint_name = 'fk_scheduled_employee'"
+    );
+    $stmt->execute();
+    return (int) $stmt->fetchColumn() > 0;
+}
+
 function ensure_scheduled_hours_schema(PDO $pdo): void
 {
     $cols = $pdo->query('SHOW COLUMNS FROM scheduled_hours')->fetchAll(PDO::FETCH_COLUMN);
@@ -60,6 +80,12 @@ function ensure_scheduled_hours_schema(PDO $pdo): void
     if (!$hasNew) {
         $pdo->exec('ALTER TABLE scheduled_hours ADD UNIQUE KEY uq_employee_day_week (employee_id, day_of_week, week_start)');
     }
+
+    // Certains déploiements historiques gardent une FK cassée sur employee_id,
+    // ce qui bloque l'enregistrement des horaires même pour des employés valides.
+    if (scheduled_hours_fk_exists($pdo)) {
+        $pdo->exec('ALTER TABLE scheduled_hours DROP FOREIGN KEY fk_scheduled_employee');
+    }
 }
 
 try {
@@ -69,7 +95,7 @@ try {
 
     if ($action === 'get') {
         $emp_id = (int) ($_GET['employee_id'] ?? 0);
-        if ($emp_id <= 0) {
+        if ($emp_id <= 0 || !employee_exists($pdo, $emp_id)) {
             json_response(['error' => 'Collaborateur invalide.'], 400);
             exit;
         }
@@ -115,7 +141,7 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $payload = json_decode(file_get_contents('php://input'), true) ?? [];
         $emp_id = (int) ($payload['employee_id'] ?? 0);
-        if ($emp_id <= 0) {
+        if ($emp_id <= 0 || !employee_exists($pdo, $emp_id)) {
             json_response(['error' => 'Collaborateur invalide.'], 400);
             exit;
         }
@@ -238,5 +264,16 @@ try {
 
     json_response(['error' => 'Methode non autorisee.'], 405);
 } catch (Throwable $e) {
-    json_response(['error' => $e->getMessage()], 500);
+    $message = $e->getMessage();
+    $status = 500;
+
+    if ($e instanceof PDOException) {
+        $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
+        if ($sqlState === '23000') {
+            $status = 409;
+            $message = 'Impossible d\'enregistrer l\'horaire pour ce collaborateur.';
+        }
+    }
+
+    json_response(['error' => $message], $status);
 }
