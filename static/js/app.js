@@ -15,6 +15,10 @@ const els = {
 };
 
 let toastTimer = null;
+let autoRefreshTimer = null;
+let dashboardRequestInFlight = false;
+
+const AUTO_REFRESH_MS = 15000;
 
 function showToast(message, isError = false) {
   els.toast.textContent = message;
@@ -72,6 +76,8 @@ function formatTime(iso) {
 }
 
 function renderEmployees(employees) {
+  const previousSelection = els.employeeSelect.value;
+
   els.employeeSelect.innerHTML = '';
   els.employeeList.innerHTML = '';
 
@@ -90,6 +96,10 @@ function renderEmployees(employees) {
     `;
     els.employeeList.append(item);
   });
+
+  if (previousSelection && employees.some((employee) => String(employee.id) === String(previousSelection))) {
+    els.employeeSelect.value = previousSelection;
+  }
 }
 
 function renderEvents(events) {
@@ -108,16 +118,38 @@ function renderEvents(events) {
   });
 }
 
-async function loadDashboard() {
-  const data = await api('/api/dashboard');
+async function loadDashboard(force = false) {
+  if (dashboardRequestInFlight && !force) {
+    return;
+  }
 
-  els.statTotal.textContent = data.summary.employees_total;
-  els.statPresent.textContent = data.summary.present;
-  els.statAbsent.textContent = data.summary.absent;
-  els.statEvents.textContent = data.summary.events_today;
+  dashboardRequestInFlight = true;
 
-  renderEmployees(data.employees);
-  renderEvents(data.events);
+  try {
+    const data = await api('/api/dashboard');
+
+    els.statTotal.textContent = data.summary.employees_total;
+    els.statPresent.textContent = data.summary.present;
+    els.statAbsent.textContent = data.summary.absent;
+    els.statEvents.textContent = data.summary.events_today;
+
+    renderEmployees(data.employees);
+    renderEvents(data.events);
+  } finally {
+    dashboardRequestInFlight = false;
+  }
+}
+
+function startAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+  }
+
+  autoRefreshTimer = setInterval(() => {
+    if (!document.hidden) {
+      loadDashboard().catch((error) => showToast(error.message, true));
+    }
+  }, AUTO_REFRESH_MS);
 }
 
 async function submitRfid(event) {
@@ -167,16 +199,27 @@ function wireEvents() {
   els.btnIn.addEventListener('click', () => submitManual('in'));
   els.btnOut.addEventListener('click', () => submitManual('out'));
   els.refreshBtn.addEventListener('click', () => {
-    loadDashboard().catch((error) => showToast(error.message, true));
+    loadDashboard(true).catch((error) => showToast(error.message, true));
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      loadDashboard(true).catch((error) => showToast(error.message, true));
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    loadDashboard(true).catch((error) => showToast(error.message, true));
   });
 }
 
 async function boot() {
   wireEvents();
+  startAutoRefresh();
   els.badgeInput.focus();
 
   try {
-    await loadDashboard();
+    await loadDashboard(true);
   } catch (error) {
     showToast(error.message, true);
   }
