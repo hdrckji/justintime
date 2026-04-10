@@ -76,14 +76,40 @@ try {
     }
 
     $next_type = infer_next_event($pdo, (int) $employee['id']);
-    $event     = insert_event($pdo, (int) $employee['id'], $next_type, 'rfid');
-    $action    = $next_type === 'in' ? 'entree' : 'sortie';
+    $event = insert_event($pdo, (int) $employee['id'], $next_type, 'rfid');
+    $isDuplicate = !empty($event['duplicate']);
+    $effectiveType = (string) ($event['event_type'] ?? $next_type);
+
+    if ($isDuplicate) {
+        json_response([
+            'message' => "{$employee['name']} : pointage deja pris en compte.",
+            'name' => $event['name'] ?? $employee['name'],
+            'badge_id' => $event['badge_id'] ?? $badge_id,
+            'event_type' => 'duplicate',
+            'original_event_type' => $effectiveType,
+            'timestamp' => $event['timestamp'] ?? date(DATE_ATOM),
+            'duplicate' => true,
+            'seconds_since_last' => $event['seconds_since_last'] ?? null,
+            'event'   => $event,
+            'server_time' => date(DATE_ATOM),
+            'device' => [
+                'id' => $device_id,
+                'label' => $device_label,
+                'ip' => $ip_address,
+                'rssi' => $rssi,
+                'firmware' => $firmware,
+            ],
+        ]);
+        exit;
+    }
+
+    $action = $effectiveType === 'in' ? 'entree' : 'sortie';
 
     json_response([
         'message' => "{$employee['name']} enregistre: $action.",
         'name' => $event['name'] ?? $employee['name'],
         'badge_id' => $event['badge_id'] ?? $badge_id,
-        'event_type' => $event['event_type'] ?? $next_type,
+        'event_type' => $effectiveType,
         'timestamp' => $event['timestamp'] ?? date(DATE_ATOM),
         'event'   => $event,
         'server_time' => date(DATE_ATOM),

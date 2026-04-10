@@ -56,7 +56,17 @@ try {
         exit;
     }
 
-    $event  = insert_event($pdo, (int) $employee_id, $event_type, 'manual');
+    $event = insert_event($pdo, (int) $employee_id, $event_type, 'manual');
+
+    if (!empty($event['duplicate'])) {
+        json_response([
+            'message' => "{$employee['name']} : pointage deja pris en compte.",
+            'duplicate' => true,
+            'event'   => $event,
+        ]);
+        exit;
+    }
+
     $action = $event_type === 'in' ? 'entree' : 'sortie';
 
     json_response([

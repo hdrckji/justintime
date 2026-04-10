@@ -71,11 +71,17 @@ try {
     }
 
     $event_type = infer_next_event($pdo, $emp_id);
-    $event      = insert_event($pdo, $emp_id, $event_type, 'manual');
+    $event = insert_event($pdo, $emp_id, $event_type, 'manual');
+    $isDuplicate = !empty($event['duplicate']);
 
     json_response([
+        'message' => $isDuplicate
+            ? 'Pointage deja pris en compte.'
+            : 'Pointage enregistre.',
         'event'      => $event,
-        'event_type' => $event_type,
+        'event_type' => $isDuplicate ? 'duplicate' : $event_type,
+        'duplicate' => $isDuplicate,
+        'original_event_type' => $isDuplicate ? ($event['event_type'] ?? $event_type) : $event_type,
     ]);
 
 } catch (Throwable $e) {

@@ -34,6 +34,10 @@
   LEDs
     Verte  -> GPIO 26 (avec resistance 220 ohms)
     Rouge  -> GPIO 27 (avec resistance 220 ohms)
+
+  Buzzer passif
+    +      -> GPIO 33
+    -      -> GND
 */
 
 const char* WIFI_SSID = "Freebox-661B9B";
@@ -58,6 +62,11 @@ constexpr int8_t TFT_BL_PIN = -1;     // laisse -1 si BLK est relie directement 
 
 constexpr uint8_t GREEN_LED_PIN = 26;
 constexpr uint8_t RED_LED_PIN = 27;
+constexpr uint8_t BUZZER_PIN = 33;
+constexpr uint8_t BUZZER_DUTY = 220;  // 0-255, plus haut = plus fort
+#if !defined(ESP_ARDUINO_VERSION_MAJOR) || (ESP_ARDUINO_VERSION_MAJOR < 3)
+constexpr uint8_t BUZZER_PWM_CHANNEL = 0;
+#endif
 
 const char* TZ_INFO = "CET-1CEST,M3.5.0/2,M10.5.0/3";
 const char* NTP_SERVER_1 = "pool.ntp.org";
@@ -119,10 +128,43 @@ void setStatusLeds(bool greenOn, bool redOn) {
 
 void updateConnectionLeds() {
   if (WiFi.status() == WL_CONNECTED) {
-    setStatusLeds(true, false);
+    setStatusLeds(false, false);
   } else {
-    setStatusLeds(false, true);
+    const bool blinkOn = ((millis() / 350) % 2) == 0;
+    setStatusLeds(false, blinkOn);
   }
+}
+
+void initBuzzer() {
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+  ledcAttach(BUZZER_PIN, 2400, 8);
+  ledcWrite(BUZZER_PIN, 0);
+#else
+  ledcSetup(BUZZER_PWM_CHANNEL, 2400, 8);
+  ledcAttachPin(BUZZER_PIN, BUZZER_PWM_CHANNEL);
+  ledcWrite(BUZZER_PWM_CHANNEL, 0);
+#endif
+}
+
+void playBuzzerTone(uint16_t frequency, unsigned long durationMs) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+  ledcWrite(BUZZER_PIN, BUZZER_DUTY);
+  ledcWriteTone(BUZZER_PIN, frequency);
+#else
+  ledcWrite(BUZZER_PWM_CHANNEL, BUZZER_DUTY);
+  ledcWriteTone(BUZZER_PWM_CHANNEL, frequency);
+#endif
+  delay(durationMs);
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+  ledcWriteTone(BUZZER_PIN, 0);
+  ledcWrite(BUZZER_PIN, 0);
+#else
+  ledcWriteTone(BUZZER_PWM_CHANNEL, 0);
+  ledcWrite(BUZZER_PWM_CHANNEL, 0);
+#endif
 }
 
 void blinkPin(uint8_t pin, uint8_t times, unsigned long onMs, unsigned long offMs) {
@@ -137,12 +179,38 @@ void blinkPin(uint8_t pin, uint8_t times, unsigned long onMs, unsigned long offM
   updateConnectionLeds();
 }
 
-void signalSuccess() {
-  blinkPin(GREEN_LED_PIN, 2, 90, 70);
+void signalSuccess(const String& eventType = "") {
+  setStatusLeds(true, false);
+
+  if (eventType == "out") {
+    playBuzzerTone(2400, 110);
+    delay(25);
+    playBuzzerTone(1800, 140);
+    delay(20);
+    playBuzzerTone(1400, 180);
+  } else {
+    playBuzzerTone(1400, 100);
+    delay(25);
+    playBuzzerTone(2000, 130);
+    delay(20);
+    playBuzzerTone(2600, 170);
+  }
+
+  delay(300);
+  updateConnectionLeds();
 }
 
 void signalError() {
-  blinkPin(RED_LED_PIN, 2, 150, 100);
+  setStatusLeds(false, true);
+
+  playBuzzerTone(700, 180);
+  delay(40);
+  playBuzzerTone(520, 220);
+  delay(40);
+  playBuzzerTone(380, 260);
+
+  delay(350);
+  updateConnectionLeds();
 }
 
 String formatUid(const MFRC522::Uid& uid) {
@@ -482,12 +550,13 @@ void connectWifi() {
   WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  setStatusLeds(false, true);
+  updateConnectionLeds();
   showDisplayMessage("Connexion Wi-Fi", WIFI_SSID, "Patiente...", COLOR_INFO);
 
   Serial.print("Connexion Wi-Fi");
   const unsigned long wifiConnectStartedAt = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - wifiConnectStartedAt < 20000) {
+    updateConnectionLeds();
     delay(500);
     Serial.print(".");
   }
@@ -495,7 +564,7 @@ void connectWifi() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println();
     Serial.println("Connexion Wi-Fi en echec (timeout).");
-    setStatusLeds(false, true);
+    updateConnectionLeds();
     showDisplayMessage("Wi-Fi indisponible", "Timeout connexion", "Nouvel essai...", COLOR_ERROR);
     return;
   }
@@ -602,7 +671,7 @@ void sendBadge(const String& badgeId) {
     return;
   }
 
-  setStatusLeds(false, true);
+  setStatusLeds(false, false);
   showDisplayMessage("Badge detecte", badgeId, "Envoi au site...", COLOR_ACCENT);
 
   HTTPClient http;
@@ -669,6 +738,8 @@ void sendBadge(const String& badgeId) {
   const String serverMessage = extractJsonValue(body, "message");
   const String errorMessage = extractJsonValue(body, "error");
   const String eventType = extractJsonValue(body, "event_type");
+  const String originalEventType = extractJsonValue(body, "original_event_type");
+  const bool alreadyProcessed = eventType == "duplicate" || serverMessage.indexOf("deja pris en compte") >= 0;
   String scanTime = formatTimestampForDisplay(extractJsonValue(body, "timestamp"));
 
   if (scanTime.length() == 0) {
@@ -683,24 +754,35 @@ void sendBadge(const String& badgeId) {
   }
 
   if (httpCode == 200) {
-    String actionLine = "OK";
-    uint16_t actionColor = COLOR_OK;
+    if (alreadyProcessed) {
+      const String duplicateType = originalEventType.length() > 0 ? originalEventType : "in";
+      signalSuccess(duplicateType);
+      showDisplayMessage(
+        "Deja pointe",
+        personName.length() > 0 ? personName : "Badge reconnu",
+        serverMessage.length() > 0 ? serverMessage : "Pointage deja pris en compte",
+        COLOR_WARN
+      );
+    } else {
+      String actionLine = "OK";
+      uint16_t actionColor = COLOR_OK;
 
-    if (eventType == "out" || serverMessage.indexOf("sortie") >= 0) {
-      actionLine = "SORTIE";
-      actionColor = COLOR_OUT;
-    } else if (eventType == "in" || serverMessage.indexOf("entree") >= 0) {
-      actionLine = "ENTREE";
-      actionColor = COLOR_OK;
+      if (eventType == "out" || serverMessage.indexOf("sortie") >= 0) {
+        actionLine = "SORTIE";
+        actionColor = COLOR_OUT;
+      } else if (eventType == "in" || serverMessage.indexOf("entree") >= 0) {
+        actionLine = "ENTREE";
+        actionColor = COLOR_OK;
+      }
+
+      signalSuccess(eventType.length() > 0 ? eventType : (actionLine == "SORTIE" ? "out" : "in"));
+      showScanResult(
+        personName.length() > 0 ? personName : "Badge reconnu",
+        actionLine,
+        scanTime,
+        actionColor
+      );
     }
-
-    signalSuccess();
-    showScanResult(
-      personName.length() > 0 ? personName : "Badge reconnu",
-      actionLine,
-      scanTime,
-      actionColor
-    );
   } else if (httpCode == 404) {
     signalError();
     showDisplayMessage("Badge inconnu", badgeId, errorMessage.length() > 0 ? errorMessage : "Ajoute-le au site", COLOR_ERROR);
@@ -727,7 +809,8 @@ void setup() {
   pinMode(TFT_CS_PIN, OUTPUT);
   pinMode(TFT_DC_PIN, OUTPUT);
 
-  setStatusLeds(false, true);
+  initBuzzer();
+  setStatusLeds(false, false);
   deselectSpiDevices();
   digitalWrite(RC522_RST_PIN, HIGH);
 
@@ -746,6 +829,8 @@ void setup() {
 }
 
 void loop() {
+  updateConnectionLeds();
+
   if (WiFi.status() != WL_CONNECTED) {
     connectWifi();
     syncRemoteConfig(true);
