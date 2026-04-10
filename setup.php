@@ -11,6 +11,13 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 
+$isLocal = in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
+$setupAllowed = strtolower((string) env_or_default('JIT_ALLOW_SETUP', '0'));
+if (!$isLocal && !in_array($setupAllowed, ['1', 'true', 'yes', 'on'], true)) {
+    http_response_code(403);
+    exit('setup.php est desactive en production.');
+}
+
 $output = [];
 
 try {

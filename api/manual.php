@@ -1,5 +1,13 @@
 <?php
+require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../db.php';
+
+require_login();
+$auth = get_auth_user();
+if (($auth['role'] ?? '') === 'employee') {
+    json_response(['error' => 'Acces reserve a l administration.'], 403);
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'Methode non autorisee.'], 405);

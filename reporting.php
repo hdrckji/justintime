@@ -4,6 +4,10 @@ require_once __DIR__ . '/db.php';
 
 require_login();
 $user = get_auth_user();
+if (($user['role'] ?? '') === 'employee') {
+    header('Location: employee.php');
+    exit;
+}
 
 $pdo = get_pdo();
 

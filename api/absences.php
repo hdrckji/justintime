@@ -27,7 +27,12 @@ try {
         $payload = json_decode(file_get_contents('php://input'), true) ?? [];
 
         if ($action === 'delete') {
-            $id = (int) $_GET['id'];
+            $id = (int) ($_GET['id'] ?? 0);
+            if ($id <= 0) {
+                json_response(['error' => 'Identifiant d\'absence invalide.'], 400);
+                exit;
+            }
+
             $stmt = $pdo->prepare('DELETE FROM absences WHERE id = ?');
             $stmt->execute([$id]);
             json_response(['message' => 'Absence supprimee.']);
@@ -35,7 +40,7 @@ try {
         }
 
         // Insert absence
-        $emp_id    = (int) $payload['employee_id'];
+        $emp_id    = (int) ($payload['employee_id'] ?? 0);
         $type      = trim($payload['type'] ?? '');
         $start     = trim($payload['start_date'] ?? '');
         $end       = trim($payload['end_date'] ?? '');
@@ -46,8 +51,22 @@ try {
             exit;
         }
 
-        if (!in_array($type, ['sick', 'vacation', 'other'])) {
+        if (!in_array($type, ['sick', 'vacation', 'other'], true)) {
             json_response(['error' => 'Type invalide.'], 400);
+            exit;
+        }
+
+        $startDate = DateTime::createFromFormat('Y-m-d', $start);
+        $endDate = DateTime::createFromFormat('Y-m-d', $end);
+        if (!$startDate || !$endDate || $startDate->format('Y-m-d') !== $start || $endDate->format('Y-m-d') !== $end || $startDate > $endDate) {
+            json_response(['error' => 'Periode d\'absence invalide.'], 400);
+            exit;
+        }
+
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM employees WHERE id = ? AND active = 1');
+        $stmt->execute([$emp_id]);
+        if ((int) $stmt->fetchColumn() === 0) {
+            json_response(['error' => 'Collaborateur introuvable ou inactif.'], 404);
             exit;
         }
 

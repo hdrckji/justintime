@@ -34,7 +34,14 @@ try {
             $params[] = $filter;
         }
 
-        if ($emp_id && is_numeric($emp_id)) {
+        if (($auth['role'] ?? '') === 'employee') {
+            if (!$auth['employee_id']) {
+                json_response(['error' => 'Compte non lie a un employe.'], 403);
+                exit;
+            }
+            $sql .= " AND vr.employee_id = ?";
+            $params[] = (int) $auth['employee_id'];
+        } elseif ($emp_id && is_numeric($emp_id)) {
             $sql .= " AND vr.employee_id = ?";
             $params[] = (int) $emp_id;
         }

@@ -1,5 +1,13 @@
 <?php
+require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../db.php';
+
+require_login();
+$auth = get_auth_user();
+if (($auth['role'] ?? '') === 'employee') {
+    json_response(['error' => 'Acces reserve au tableau de bord encadrant.'], 403);
+    exit;
+}
 
 try {
     $pdo = get_pdo();

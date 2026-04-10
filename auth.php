@@ -4,6 +4,16 @@
 function start_session(): void
 {
     if (session_status() === PHP_SESSION_NONE) {
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || ((int) ($_SERVER['SERVER_PORT'] ?? 0) === 443);
+
+        session_set_cookie_params([
+            'httponly' => true,
+            'samesite' => 'Lax',
+            'secure'   => $isHttps,
+            'path'     => '/',
+        ]);
+
         session_start();
     }
 }
@@ -57,6 +67,7 @@ function login(PDO $pdo, string $username, string $password): bool
     }
 
     start_session();
+    session_regenerate_id(true);
     $_SESSION['user_id']     = (int) $user['id'];
     $_SESSION['username']    = $user['username'];
     $_SESSION['role']        = $user['role'];
@@ -68,5 +79,12 @@ function login(PDO $pdo, string $username, string $password): bool
 function logout(): void
 {
     start_session();
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+    }
+
     session_destroy();
 }
