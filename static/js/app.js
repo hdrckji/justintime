@@ -48,8 +48,21 @@ async function api(path, options = {}) {
 }
 
 function formatTime(iso) {
-  const d = new Date(iso);
+  if (!iso) {
+    return '-';
+  }
+
+  const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(iso)
+    ? `${iso}Z`
+    : iso;
+
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) {
+    return iso;
+  }
+
   return d.toLocaleString('fr-FR', {
+    timeZone: 'Europe/Paris',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',

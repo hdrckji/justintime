@@ -3,10 +3,38 @@
 #include <HTTPClient.h>
 #include <SPI.h>
 #include <MFRC522.h>
-#include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <Adafruit_ILI9341.h>
 #include <time.h>
+
+/*
+  JustInTime - ESP32 RFID + ILI9341 + 2 LEDs
+
+  Cablage recommande:
+  RC522
+    SDA/SS -> GPIO 5
+    RST    -> GPIO 4
+    SCK    -> GPIO 18
+    MISO   -> GPIO 19
+    MOSI   -> GPIO 23
+    VCC    -> 3V3
+    GND    -> GND
+
+  ILI9341 (SPI)
+    CS     -> GPIO 22
+    DC     -> GPIO 21
+    RES    -> GPIO 25
+    SCK    -> GPIO 18
+    MOSI   -> GPIO 23
+    MISO   -> laisser non branche si le RC522 partage le meme SPI
+    BLK    -> 3V3 (ou un GPIO si tu veux piloter le retroeclairage)
+    VCC    -> 3V3
+    GND    -> GND
+
+  LEDs
+    Verte  -> GPIO 26 (avec resistance 220 ohms)
+    Rouge  -> GPIO 27 (avec resistance 220 ohms)
+*/
 
 const char* WIFI_SSID = "Freebox-661B9B";
 const char* WIFI_PASSWORD = "2hwtxq5brsqcswdmqdnk4m";
@@ -15,27 +43,48 @@ const char* SITE_BASE_URL = "https://diligent-embrace-production.up.railway.app"
 const char* RFID_ENDPOINT = "/api/attendance/rfid";
 const char* DEVICE_ID = "ESP32-RFID-01";
 const char* DEVICE_LABEL = "Entree";
-const char* FIRMWARE_VERSION = "jit-esp32-2.0";
+const char* FIRMWARE_VERSION = "jit-esp32-ili9341-3.0";
 
-constexpr uint8_t SS_PIN = 5;
-constexpr uint8_t RST_PIN = 4;
-constexpr uint8_t SCK_PIN = 18;
-constexpr uint8_t MISO_PIN = 19;
-constexpr uint8_t MOSI_PIN = 23;
+constexpr uint8_t RC522_SS_PIN = 5;
+constexpr uint8_t RC522_RST_PIN = 4;
+constexpr uint8_t SPI_SCK_PIN = 18;
+constexpr uint8_t SPI_MISO_PIN = 19;
+constexpr uint8_t SPI_MOSI_PIN = 23;
 
-constexpr uint8_t OLED_SDA_PIN = 21;
-constexpr uint8_t OLED_SCL_PIN = 22;
-constexpr uint8_t SCREEN_WIDTH = 128;
-constexpr uint8_t SCREEN_HEIGHT = 64;
-constexpr int OLED_RESET = -1;
+constexpr uint8_t TFT_CS_PIN = 22;
+constexpr uint8_t TFT_DC_PIN = 21;
+constexpr uint8_t TFT_RST_PIN = 25;   // ton RES est branche sur GPIO 25
+constexpr int8_t TFT_BL_PIN = -1;     // laisse -1 si BLK est relie directement au 3V3
+
+constexpr uint8_t GREEN_LED_PIN = 26;
+constexpr uint8_t RED_LED_PIN = 27;
 
 const char* TZ_INFO = "CET-1CEST,M3.5.0/2,M10.5.0/3";
 const char* NTP_SERVER_1 = "pool.ntp.org";
 const char* NTP_SERVER_2 = "time.nist.gov";
 
-MFRC522 mfrc522(SS_PIN, RST_PIN);
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-bool oledReady = false;
+const uint16_t COLOR_BG = ILI9341_BLACK;
+const uint16_t COLOR_TEXT = ILI9341_WHITE;
+const uint16_t COLOR_INFO = ILI9341_BLUE;
+const uint16_t COLOR_ACCENT = ILI9341_CYAN;
+const uint16_t COLOR_OK = ILI9341_GREEN;
+const uint16_t COLOR_ERROR = ILI9341_RED;
+const uint16_t COLOR_WARN = ILI9341_YELLOW;
+const uint16_t COLOR_DIM = 0x8410;
+const uint16_t COLOR_PANEL = 0x1082;
+const uint16_t COLOR_OUT = 0xFD20; // orange
+constexpr uint32_t TFT_SPI_FREQUENCY = 10000000;
+constexpr unsigned long RFID_HEALTH_CHECK_MS = 3000;
+
+MFRC522 mfrc522(RC522_SS_PIN, RC522_RST_PIN);
+Adafruit_ILI9341 tft(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN);
+bool displayReady = false;
+bool idleScreenInitialized = false;
+String lastRenderedClock = "";
+String lastRenderedWifiLine = "";
+String lastRenderedIdleMessage = "";
+String lastRenderedSiteName = "";
+bool lastRenderedWifiConnected = false;
 
 String lastUid = "";
 String idleMessage = "Passe un badge";
@@ -46,6 +95,55 @@ unsigned long lastClockRefreshAt = 0;
 unsigned long clockRefreshMs = 1000;
 unsigned long lastConfigSyncAt = 0;
 unsigned long configRefreshMs = 300000;
+unsigned long lastRfidHealthCheckAt = 0;
+
+String clipText(const String& text, size_t maxLen) {
+  if (text.length() <= maxLen) {
+    return text;
+  }
+  if (maxLen <= 3) {
+    return text.substring(0, maxLen);
+  }
+  return text.substring(0, maxLen - 3) + "...";
+}
+
+void deselectSpiDevices() {
+  digitalWrite(RC522_SS_PIN, HIGH);
+  digitalWrite(TFT_CS_PIN, HIGH);
+}
+
+void setStatusLeds(bool greenOn, bool redOn) {
+  digitalWrite(GREEN_LED_PIN, greenOn ? HIGH : LOW);
+  digitalWrite(RED_LED_PIN, redOn ? HIGH : LOW);
+}
+
+void updateConnectionLeds() {
+  if (WiFi.status() == WL_CONNECTED) {
+    setStatusLeds(true, false);
+  } else {
+    setStatusLeds(false, true);
+  }
+}
+
+void blinkPin(uint8_t pin, uint8_t times, unsigned long onMs, unsigned long offMs) {
+  for (uint8_t i = 0; i < times; i++) {
+    digitalWrite(pin, HIGH);
+    delay(onMs);
+    digitalWrite(pin, LOW);
+    if (i + 1 < times) {
+      delay(offMs);
+    }
+  }
+  updateConnectionLeds();
+}
+
+void signalSuccess() {
+  blinkPin(GREEN_LED_PIN, 2, 90, 70);
+}
+
+void signalError() {
+  blinkPin(RED_LED_PIN, 2, 150, 100);
+}
 
 String formatUid(const MFRC522::Uid& uid) {
   String result;
@@ -54,11 +152,9 @@ String formatUid(const MFRC522::Uid& uid) {
     if (i > 0) {
       result += "-";
     }
-
     if (uid.uidByte[i] < 0x10) {
       result += "0";
     }
-
     result += String(uid.uidByte[i], HEX);
   }
 
@@ -143,7 +239,6 @@ String formatTimestampForDisplay(const String& isoTimestamp) {
   if (timePos >= 0 && isoTimestamp.length() >= timePos + 9) {
     return isoTimestamp.substring(timePos + 1, timePos + 9);
   }
-
   return "";
 }
 
@@ -183,88 +278,203 @@ void syncClock() {
   }
 }
 
-void drawCenteredText(const String& text, int y, uint8_t textSize) {
-  if (text.length() == 0) {
+void drawCenteredText(const String& text, int y, uint8_t textSize, uint16_t color = COLOR_TEXT, uint16_t bgColor = COLOR_BG) {
+  if (!displayReady || text.length() == 0) {
     return;
   }
 
   int16_t x1, y1;
   uint16_t w, h;
-  display.setTextSize(textSize);
-  display.getTextBounds(text, 0, y, &x1, &y1, &w, &h);
+  tft.setTextSize(textSize);
+  tft.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
 
-  int x = (SCREEN_WIDTH - static_cast<int>(w)) / 2;
+  int x = (tft.width() - static_cast<int>(w)) / 2;
   if (x < 0) {
     x = 0;
   }
 
-  display.setCursor(x, y);
-  display.print(text);
+  tft.setTextColor(color, bgColor);
+  tft.setCursor(x, y);
+  tft.print(text);
 }
 
-void showDisplayMessage(const String& line1, const String& line2 = "", const String& line3 = "") {
-  if (!oledReady) {
+void invalidateIdleScreen() {
+  idleScreenInitialized = false;
+  lastRenderedClock = "";
+  lastRenderedWifiLine = "";
+  lastRenderedIdleMessage = "";
+  lastRenderedSiteName = "";
+  lastRenderedWifiConnected = false;
+}
+
+void showDisplayMessage(const String& line1, const String& line2 = "", const String& line3 = "", uint16_t accentColor = COLOR_INFO) {
+  if (!displayReady) {
     return;
   }
 
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
+  invalidateIdleScreen();
+  deselectSpiDevices();
 
-  drawCenteredText(siteName, 0, 1);
-  drawCenteredText(line1, 18, 1);
-  drawCenteredText(line2, 34, 1);
-  drawCenteredText(line3, 50, 1);
+  tft.fillScreen(COLOR_BG);
+  tft.fillRect(0, 0, tft.width(), 36, accentColor);
+  tft.drawFastHLine(0, 36, tft.width(), COLOR_TEXT);
+  tft.fillRoundRect(12, 52, tft.width() - 24, 126, 10, COLOR_PANEL);
+  tft.drawRoundRect(12, 52, tft.width() - 24, 126, 10, accentColor);
 
-  display.display();
+  drawCenteredText(clipText(siteName, 22), 8, 2, COLOR_TEXT, accentColor);
+  drawCenteredText(clipText(line1, 22), 70, 3, COLOR_TEXT, COLOR_PANEL);
+  drawCenteredText(clipText(line2, 28), 116, 2, COLOR_ACCENT, COLOR_PANEL);
+  drawCenteredText(clipText(line3, 30), 150, 2, COLOR_DIM, COLOR_PANEL);
+  drawCenteredText(String("Lecteur: ") + DEVICE_LABEL, 212, 1, COLOR_DIM, COLOR_BG);
+
+  digitalWrite(TFT_CS_PIN, HIGH);
 }
 
 void initDisplay() {
-  Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+  pinMode(TFT_DC_PIN, OUTPUT);
+  pinMode(TFT_CS_PIN, OUTPUT);
 
-  oledReady = display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  if (!oledReady) {
-    Serial.println("Ecran OLED non detecte.");
-    return;
+  if (TFT_RST_PIN >= 0) {
+    pinMode(TFT_RST_PIN, OUTPUT);
+    digitalWrite(TFT_RST_PIN, HIGH);
+    delay(5);
+    digitalWrite(TFT_RST_PIN, LOW);
+    delay(20);
+    digitalWrite(TFT_RST_PIN, HIGH);
+    delay(150);
   }
 
-  showDisplayMessage("Demarrage...", "Initialisation");
+  if (TFT_BL_PIN >= 0) {
+    pinMode(TFT_BL_PIN, OUTPUT);
+    digitalWrite(TFT_BL_PIN, HIGH);
+  }
+
+  deselectSpiDevices();
+  tft.begin(TFT_SPI_FREQUENCY);
+  tft.setRotation(1); // paysage 320x240
+  tft.fillScreen(COLOR_BG);
+  displayReady = true;
+  invalidateIdleScreen();
+
+  showDisplayMessage("Demarrage...", "Initialisation TFT", "ILI9341 OK", COLOR_ACCENT);
 }
 
 void showIdleScreen() {
-  if (!oledReady) {
+  if (!displayReady) {
     return;
   }
 
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
+  const bool wifiConnected = WiFi.status() == WL_CONNECTED;
+  const String currentTime = getCurrentTimeString();
+  const String wifiLine = wifiConnected
+    ? String("WiFi OK - ") + WiFi.localIP().toString()
+    : "WiFi non connecte";
 
-  drawCenteredText(siteName, 0, 1);
-  drawCenteredText(getCurrentTimeString(), 18, 2);
-  drawCenteredText(idleMessage, 50, 1);
+  deselectSpiDevices();
 
-  display.display();
+  if (!idleScreenInitialized) {
+    tft.fillScreen(COLOR_BG);
+    tft.fillRect(0, 0, tft.width(), 36, COLOR_INFO);
+    tft.drawFastHLine(0, 36, tft.width(), COLOR_ACCENT);
+
+    tft.fillRoundRect(18, 52, tft.width() - 36, 58, 10, COLOR_PANEL);
+    tft.drawRoundRect(18, 52, tft.width() - 36, 58, 10, COLOR_ACCENT);
+
+    tft.fillRoundRect(24, 126, tft.width() - 48, 42, 8, COLOR_PANEL);
+    tft.drawRoundRect(24, 126, tft.width() - 48, 42, 8, COLOR_DIM);
+
+    tft.fillRoundRect(18, 186, tft.width() - 36, 24, 8, COLOR_PANEL);
+    tft.drawRoundRect(18, 186, tft.width() - 36, 24, 8, COLOR_DIM);
+
+    drawCenteredText(String("Lecteur: ") + DEVICE_LABEL, 220, 1, COLOR_DIM, COLOR_BG);
+    idleScreenInitialized = true;
+  }
+
+  if (lastRenderedSiteName != siteName) {
+    tft.fillRect(0, 6, tft.width(), 24, COLOR_INFO);
+    drawCenteredText(clipText(siteName, 22), 8, 2, COLOR_TEXT, COLOR_INFO);
+    lastRenderedSiteName = siteName;
+  }
+
+  if (lastRenderedClock != currentTime) {
+    tft.fillRect(26, 62, tft.width() - 52, 36, COLOR_PANEL);
+    drawCenteredText(currentTime, 64, 4, COLOR_ACCENT, COLOR_PANEL);
+    lastRenderedClock = currentTime;
+  }
+
+  if (lastRenderedIdleMessage != idleMessage) {
+    tft.fillRect(32, 136, tft.width() - 64, 22, COLOR_PANEL);
+    drawCenteredText(clipText(idleMessage, 26), 138, 2, COLOR_TEXT, COLOR_PANEL);
+    lastRenderedIdleMessage = idleMessage;
+  }
+
+  if (lastRenderedWifiLine != wifiLine || lastRenderedWifiConnected != wifiConnected) {
+    tft.fillRect(24, 191, tft.width() - 48, 14, COLOR_PANEL);
+    drawCenteredText(clipText(wifiLine, 30), 196, 1, wifiConnected ? COLOR_OK : COLOR_ERROR, COLOR_PANEL);
+    lastRenderedWifiLine = wifiLine;
+    lastRenderedWifiConnected = wifiConnected;
+  }
+
+  digitalWrite(TFT_CS_PIN, HIGH);
 }
 
-void showScanResult(const String& personName, const String& actionLine, const String& scanTime) {
-  if (!oledReady) {
+void showScanResult(const String& personName, const String& actionLine, const String& scanTime, uint16_t accentColor) {
+  if (!displayReady) {
     return;
   }
 
-  String displayName = personName;
-  uint8_t nameSize = displayName.length() <= 10 ? 2 : 1;
+  invalidateIdleScreen();
+  deselectSpiDevices();
 
-  if (displayName.length() > 18) {
-    displayName = displayName.substring(0, 18);
+  tft.fillScreen(COLOR_BG);
+  tft.fillRect(0, 0, tft.width(), 42, accentColor);
+  tft.drawFastHLine(0, 42, tft.width(), COLOR_TEXT);
+  tft.fillRoundRect(14, 58, tft.width() - 28, 112, 10, COLOR_PANEL);
+  tft.drawRoundRect(14, 58, tft.width() - 28, 112, 10, accentColor);
+
+  drawCenteredText(actionLine, 11, 2, COLOR_BG, accentColor);
+  drawCenteredText(clipText(personName, 20), 76, 3, COLOR_TEXT, COLOR_PANEL);
+  drawCenteredText(scanTime, 126, 3, COLOR_WARN, COLOR_PANEL);
+  drawCenteredText("Pointage enregistre", 166, 2, COLOR_DIM, COLOR_PANEL);
+  drawCenteredText(String("Lecteur: ") + DEVICE_LABEL, 212, 1, COLOR_DIM, COLOR_BG);
+
+  digitalWrite(TFT_CS_PIN, HIGH);
+}
+
+bool isRfidReaderReady() {
+  deselectSpiDevices();
+  const byte version = mfrc522.PCD_ReadRegister(MFRC522::VersionReg);
+  return version != 0x00 && version != 0xFF;
+}
+
+bool initRfidReader(bool showFeedback = false) {
+  pinMode(RC522_RST_PIN, OUTPUT);
+  digitalWrite(RC522_RST_PIN, HIGH);
+  delay(5);
+
+  deselectSpiDevices();
+  mfrc522.PCD_Init();
+  delay(10);
+  mfrc522.PCD_AntennaOn();
+  delay(5);
+
+  deselectSpiDevices();
+  const byte version = mfrc522.PCD_ReadRegister(MFRC522::VersionReg);
+
+  Serial.print("RC522 version: 0x");
+  Serial.println(version, HEX);
+
+  const bool ready = version != 0x00 && version != 0xFF;
+  if (!ready) {
+    Serial.println("RC522 non detecte. Verifie SDA/SS, RST, SCK, MOSI et surtout debranche le MISO du TFT si partage SPI.");
+    if (showFeedback) {
+      signalError();
+      showDisplayMessage("RFID indisponible", "Verifie le cablage", "debranche MISO TFT", COLOR_ERROR);
+      delay(1500);
+    }
   }
 
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-
-  drawCenteredText(displayName, 0, nameSize);
-  drawCenteredText(actionLine, nameSize == 2 ? 24 : 18, 2);
-  drawCenteredText(scanTime, 46, 2);
-
-  display.display();
+  return ready;
 }
 
 void connectWifi() {
@@ -272,12 +482,22 @@ void connectWifi() {
   WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  showDisplayMessage("Connexion Wi-Fi", WIFI_SSID);
+  setStatusLeds(false, true);
+  showDisplayMessage("Connexion Wi-Fi", WIFI_SSID, "Patiente...", COLOR_INFO);
 
   Serial.print("Connexion Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED) {
+  const unsigned long wifiConnectStartedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiConnectStartedAt < 20000) {
     delay(500);
     Serial.print(".");
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println();
+    Serial.println("Connexion Wi-Fi en echec (timeout).");
+    setStatusLeds(false, true);
+    showDisplayMessage("Wi-Fi indisponible", "Timeout connexion", "Nouvel essai...", COLOR_ERROR);
+    return;
   }
 
   const String espIp = WiFi.localIP().toString();
@@ -289,7 +509,8 @@ void connectWifi() {
   Serial.println(SITE_BASE_URL);
 
   syncClock();
-  showDisplayMessage("Wi-Fi connecte", espIp, "Sync site...");
+  updateConnectionLeds();
+  showDisplayMessage("Wi-Fi connecte", espIp, "Sync site...", COLOR_OK);
 }
 
 void syncRemoteConfig(bool showFeedback = false) {
@@ -311,7 +532,7 @@ void syncRemoteConfig(bool showFeedback = false) {
   http.setTimeout(10000);
 
   if (showFeedback) {
-    showDisplayMessage("Connexion site", "Recuperation", "configuration...");
+    showDisplayMessage("Connexion site", "Recuperation", "configuration...", COLOR_ACCENT);
   }
 
   const int httpCode = http.GET();
@@ -331,7 +552,8 @@ void syncRemoteConfig(bool showFeedback = false) {
     Serial.print("Erreur HTTP config: ");
     Serial.println(httpError);
     if (showFeedback) {
-      showDisplayMessage("Config impossible", "HTTP " + String(httpCode), httpError);
+      signalError();
+      showDisplayMessage("Config impossible", "HTTP " + String(httpCode), httpError, COLOR_ERROR);
       delay(1200);
     }
   } else if (httpCode == 200) {
@@ -360,11 +582,12 @@ void syncRemoteConfig(bool showFeedback = false) {
     lastConfigSyncAt = millis();
 
     if (showFeedback) {
-      showDisplayMessage("Site synchronise", String(DEVICE_ID), idleMessage);
+      showDisplayMessage("Site synchronise", String(DEVICE_ID), idleMessage, COLOR_OK);
       delay(1200);
     }
   } else if (showFeedback) {
-    showDisplayMessage("Site indisponible", "HTTP " + String(httpCode), "Mode local OK");
+    signalError();
+    showDisplayMessage("Site indisponible", "HTTP " + String(httpCode), "Mode local OK", COLOR_WARN);
     delay(1200);
   }
 
@@ -374,11 +597,13 @@ void syncRemoteConfig(bool showFeedback = false) {
 void sendBadge(const String& badgeId) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Wi-Fi non connecte.");
-    showDisplayMessage("Wi-Fi non connecte", "Reconnexion...");
+    signalError();
+    showDisplayMessage("Wi-Fi non connecte", "Reconnexion...", "Reessaie", COLOR_ERROR);
     return;
   }
 
-  showDisplayMessage("Badge detecte", "Identification...", "Envoi au site...");
+  setStatusLeds(false, true);
+  showDisplayMessage("Badge detecte", badgeId, "Envoi au site...", COLOR_ACCENT);
 
   HTTPClient http;
   WiFiClientSecure secureClient;
@@ -395,7 +620,8 @@ void sendBadge(const String& badgeId) {
 
   if (!beginHttpClient(http, url, secureClient, plainClient)) {
     Serial.println("Impossible d'ouvrir la connexion HTTP pour le badge.");
-    showDisplayMessage("Erreur connexion", "HTTP init KO", "Reessaie");
+    signalError();
+    showDisplayMessage("Erreur connexion", "HTTP init KO", "Reessaie", COLOR_ERROR);
     return;
   }
 
@@ -420,7 +646,8 @@ void sendBadge(const String& badgeId) {
     Serial.println(httpError);
     Serial.println("------------------------------");
     http.end();
-    showDisplayMessage("Connexion site KO", "HTTP " + String(httpCode), httpError);
+    signalError();
+    showDisplayMessage("Connexion site KO", "HTTP " + String(httpCode), httpError, COLOR_ERROR);
     delay(2500);
     showIdleScreen();
     lastClockRefreshAt = millis();
@@ -457,26 +684,34 @@ void sendBadge(const String& badgeId) {
 
   if (httpCode == 200) {
     String actionLine = "OK";
+    uint16_t actionColor = COLOR_OK;
 
     if (eventType == "out" || serverMessage.indexOf("sortie") >= 0) {
       actionLine = "SORTIE";
+      actionColor = COLOR_OUT;
     } else if (eventType == "in" || serverMessage.indexOf("entree") >= 0) {
       actionLine = "ENTREE";
+      actionColor = COLOR_OK;
     }
 
+    signalSuccess();
     showScanResult(
       personName.length() > 0 ? personName : "Badge reconnu",
       actionLine,
-      scanTime
+      scanTime,
+      actionColor
     );
   } else if (httpCode == 404) {
-    showDisplayMessage("Badge inconnu", badgeId, errorMessage.length() > 0 ? errorMessage : "Ajoute-le au site");
+    signalError();
+    showDisplayMessage("Badge inconnu", badgeId, errorMessage.length() > 0 ? errorMessage : "Ajoute-le au site", COLOR_ERROR);
   } else {
-    showDisplayMessage("Erreur serveur", "HTTP " + String(httpCode), errorMessage.length() > 0 ? errorMessage : "Reessaie");
+    signalError();
+    showDisplayMessage("Erreur serveur", "HTTP " + String(httpCode), errorMessage.length() > 0 ? errorMessage : "Reessaie", COLOR_WARN);
   }
 
   http.end();
   delay(3000);
+  updateConnectionLeds();
   showIdleScreen();
   lastClockRefreshAt = millis();
 }
@@ -485,16 +720,29 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(RC522_SS_PIN, OUTPUT);
+  pinMode(RC522_RST_PIN, OUTPUT);
+  pinMode(TFT_CS_PIN, OUTPUT);
+  pinMode(TFT_DC_PIN, OUTPUT);
+
+  setStatusLeds(false, true);
+  deselectSpiDevices();
+  digitalWrite(RC522_RST_PIN, HIGH);
+
+  SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, RC522_SS_PIN);
+
   initDisplay();
   connectWifi();
   syncRemoteConfig(true);
 
-  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, SS_PIN);
-  mfrc522.PCD_Init();
+  const bool rfidReady = initRfidReader(true);
+  Serial.println(rfidReady ? "Lecteur RFID pret. Passe une carte devant le RC522..." : "Lecteur RFID non detecte au demarrage.");
 
-  Serial.println("Lecteur RFID pret. Passe une carte devant le RC522...");
   showIdleScreen();
   lastClockRefreshAt = millis();
+  lastRfidHealthCheckAt = millis();
 }
 
 void loop() {
@@ -506,6 +754,18 @@ void loop() {
   if (millis() - lastConfigSyncAt >= configRefreshMs) {
     syncRemoteConfig(false);
   }
+
+  if (millis() - lastRfidHealthCheckAt >= RFID_HEALTH_CHECK_MS) {
+    lastRfidHealthCheckAt = millis();
+    if (!isRfidReaderReady()) {
+      Serial.println("RC522 ne repond plus, tentative de reinitialisation...");
+      initRfidReader(false);
+      showIdleScreen();
+      lastClockRefreshAt = millis();
+    }
+  }
+
+  deselectSpiDevices();
 
   if (!mfrc522.PICC_IsNewCardPresent()) {
     if (millis() - lastClockRefreshAt >= clockRefreshMs) {

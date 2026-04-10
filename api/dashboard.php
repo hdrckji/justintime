@@ -67,7 +67,7 @@ try {
     )->fetchAll();
 
     foreach ($recent as &$r) {
-        $r['timestamp'] = str_replace(' ', 'T', $r['timestamp']);
+        $r['timestamp'] = format_iso_timestamp((string) ($r['timestamp'] ?? ''));
     }
     unset($r);
 

@@ -24,6 +24,27 @@ function get_pdo(): PDO
     return $pdo;
 }
 
+function format_iso_timestamp(?string $timestamp): string
+{
+    $raw = trim((string) $timestamp);
+    if ($raw === '') {
+        return '';
+    }
+
+    if (preg_match('/([+-]\d{2}:\d{2}|Z)$/', $raw) === 1) {
+        $dt = new DateTimeImmutable($raw);
+        return $dt->format(DATE_ATOM);
+    }
+
+    $timezone = new DateTimeZone(defined('APP_TIMEZONE') ? APP_TIMEZONE : date_default_timezone_get());
+    $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $raw, $timezone);
+    if ($dt instanceof DateTimeImmutable) {
+        return $dt->format(DATE_ATOM);
+    }
+
+    return str_replace(' ', 'T', $raw);
+}
+
 function get_last_event_type(PDO $pdo, int $employee_id): ?string
 {
     $stmt = $pdo->prepare(
@@ -63,8 +84,8 @@ function insert_event(PDO $pdo, int $employee_id, string $event_type, string $so
          WHERE a.id = ?"
     );
     $stmt->execute([$id]);
-    $row                = $stmt->fetch();
-    $row['timestamp']   = str_replace(' ', 'T', $row['timestamp']);
+    $row              = $stmt->fetch();
+    $row['timestamp'] = format_iso_timestamp((string) ($row['timestamp'] ?? ''));
     return $row;
 }
 
