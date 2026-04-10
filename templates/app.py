@@ -47,6 +47,8 @@ SEED_EMPLOYEES = [
     "Thomas Gauthier",
 ]
 
+ATTENDANCE_DUPLICATE_WINDOW_SECONDS = 60
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -164,10 +166,30 @@ def create_app() -> Flask:
             next_event_type = infer_next_event(conn, employee["id"])
             event = insert_event(conn, employee["id"], next_event_type, "rfid")
 
+        if event.get("duplicate"):
+            original_event_type = event.get("event_type", next_event_type)
+            return jsonify(
+                {
+                    "message": f"{employee['name']} : pointage deja pris en compte.",
+                    "name": event.get("name", employee["name"]),
+                    "badge_id": event.get("badge_id", badge_id),
+                    "event_type": "duplicate",
+                    "original_event_type": original_event_type,
+                    "timestamp": event.get("timestamp"),
+                    "duplicate": True,
+                    "seconds_since_last": event.get("seconds_since_last"),
+                    "event": event,
+                }
+            )
+
         action = "entree" if next_event_type == "in" else "sortie"
         return jsonify(
             {
                 "message": f"{employee['name']} enregistre: {action}.",
+                "name": event.get("name", employee["name"]),
+                "badge_id": event.get("badge_id", badge_id),
+                "event_type": event.get("event_type", next_event_type),
+                "timestamp": event.get("timestamp"),
                 "event": event,
             }
         )
@@ -208,6 +230,15 @@ def create_app() -> Flask:
                 return jsonify({"error": f"{employee['name']} n'est pas en presence active."}), 409
 
             event = insert_event(conn, employee_id, event_type, "manual")
+
+        if event.get("duplicate"):
+            return jsonify(
+                {
+                    "message": f"{employee['name']} : pointage deja pris en compte.",
+                    "duplicate": True,
+                    "event": event,
+                }
+            )
 
         action = "entree" if event_type == "in" else "sortie"
         return jsonify({"message": f"{employee['name']} enregistre: {action}.", "event": event})

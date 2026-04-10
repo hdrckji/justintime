@@ -33,6 +33,8 @@ SEED_EMPLOYEES = [
     "Thomas Gauthier",
 ]
 
+ATTENDANCE_DUPLICATE_WINDOW_SECONDS = 60
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -147,10 +149,30 @@ def create_app() -> Flask:
             next_event_type = infer_next_event(conn, employee["id"])
             event = insert_event(conn, employee["id"], next_event_type, "rfid")
 
+        if event.get("duplicate"):
+            original_event_type = event.get("event_type", next_event_type)
+            return jsonify(
+                {
+                    "message": f"{employee['name']} : pointage deja pris en compte.",
+                    "name": event.get("name", employee["name"]),
+                    "badge_id": event.get("badge_id", badge_id),
+                    "event_type": "duplicate",
+                    "original_event_type": original_event_type,
+                    "timestamp": event.get("timestamp"),
+                    "duplicate": True,
+                    "seconds_since_last": event.get("seconds_since_last"),
+                    "event": event,
+                }
+            )
+
         action = "entree" if next_event_type == "in" else "sortie"
         return jsonify(
             {
                 "message": f"{employee['name']} enregistre: {action}.",
+                "name": event.get("name", employee["name"]),
+                "badge_id": event.get("badge_id", badge_id),
+                "event_type": event.get("event_type", next_event_type),
+                "timestamp": event.get("timestamp"),
                 "event": event,
             }
         )
@@ -190,6 +212,15 @@ def create_app() -> Flask:
                 return jsonify({"error": f"{employee['name']} n'est pas en presence active."}), 409
 
             event = insert_event(conn, employee_id, event_type, "manual")
+
+        if event.get("duplicate"):
+            return jsonify(
+                {
+                    "message": f"{employee['name']} : pointage deja pris en compte.",
+                    "duplicate": True,
+                    "event": event,
+                }
+            )
 
         action = "entree" if event_type == "in" else "sortie"
         return jsonify({"message": f"{employee['name']} enregistre: {action}.", "event": event})
@@ -243,13 +274,14 @@ def init_db() -> None:
                 )
 
 
-def get_last_event_type(conn: sqlite3.Connection, employee_id: int) -> str | None:
+def get_last_event(conn: sqlite3.Connection, employee_id: int) -> dict[str, Any] | None:
     row = conn.execute(
         """
-        SELECT event_type
-        FROM attendance_events
-        WHERE employee_id = ?
-        ORDER BY id DESC
+        SELECT a.id, a.timestamp, a.event_type, a.source, e.name, e.badge_id
+        FROM attendance_events a
+        JOIN employees e ON e.id = a.employee_id
+        WHERE a.employee_id = ?
+        ORDER BY a.id DESC
         LIMIT 1
         """,
         (employee_id,),
@@ -257,7 +289,24 @@ def get_last_event_type(conn: sqlite3.Connection, employee_id: int) -> str | Non
 
     if row is None:
         return None
-    return row["event_type"]
+    return dict(row)
+
+
+def get_last_event_type(conn: sqlite3.Connection, employee_id: int) -> str | None:
+    last_event = get_last_event(conn, employee_id)
+    if last_event is None:
+        return None
+    return str(last_event["event_type"])
+
+
+def get_seconds_since_timestamp(timestamp: str) -> int | None:
+    try:
+        event_time = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return None
+
+    now = datetime.now(event_time.tzinfo) if event_time.tzinfo else datetime.now()
+    return int((now - event_time).total_seconds())
 
 
 def infer_next_event(conn: sqlite3.Connection, employee_id: int) -> str:
@@ -266,6 +315,15 @@ def infer_next_event(conn: sqlite3.Connection, employee_id: int) -> str:
 
 
 def insert_event(conn: sqlite3.Connection, employee_id: int, event_type: str, source: str) -> dict[str, Any]:
+    last_event = get_last_event(conn, employee_id)
+    if last_event is not None:
+        seconds_since_last = get_seconds_since_timestamp(str(last_event.get("timestamp", "")))
+        if seconds_since_last is not None and 0 <= seconds_since_last < ATTENDANCE_DUPLICATE_WINDOW_SECONDS:
+            last_event["duplicate"] = True
+            last_event["seconds_since_last"] = seconds_since_last
+            last_event["duplicate_window_seconds"] = ATTENDANCE_DUPLICATE_WINDOW_SECONDS
+            return last_event
+
     ts = datetime.now().isoformat(timespec="seconds")
     cursor = conn.execute(
         """
@@ -286,7 +344,9 @@ def insert_event(conn: sqlite3.Connection, employee_id: int, event_type: str, so
         (event_id,),
     ).fetchone()
 
-    return dict(row)
+    event = dict(row)
+    event["duplicate"] = False
+    return event
 
 
 app = create_app()
