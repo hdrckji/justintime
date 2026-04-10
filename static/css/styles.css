@@ -108,6 +108,11 @@ a { color: inherit; text-decoration: none; }
   color: var(--ink-soft);
 }
 
+.muted {
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+}
+
 /* ── PANELS / CARDS ── */
 .panel,
 .stat-card {
@@ -121,12 +126,17 @@ a { color: inherit; text-decoration: none; }
   padding: 1.2rem;
 }
 
-.panel-scan {
-  grid-column: span 7;
+.panel-manual {
+  grid-column: span 4;
 }
 
-.panel-manual {
-  grid-column: span 5;
+.panel-departments {
+  grid-column: span 8;
+}
+
+.panel-assignment,
+.panel-department-stats {
+  grid-column: span 12;
 }
 
 h2 {
@@ -178,7 +188,9 @@ input, textarea {
 }
 input::placeholder, textarea::placeholder { color: var(--ink-soft); }
 
-.manual-grid {
+.manual-grid,
+.department-grid,
+.assignment-grid {
   display: grid;
   gap: 0.66rem;
 }
@@ -186,6 +198,7 @@ input::placeholder, textarea::placeholder { color: var(--ink-soft); }
 .actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .btn-in {
@@ -242,6 +255,73 @@ input::placeholder, textarea::placeholder { color: var(--ink-soft); }
   background: var(--surface-2);
   color: var(--ink);
   border: 1px solid var(--line);
+}
+
+.department-list {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.department-item,
+.department-stat-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  background: var(--surface-2);
+}
+
+.department-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.department-meta,
+.employee-meta,
+.department-people {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.department-stats {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.department-stat-card dl {
+  margin: 0.75rem 0 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.department-stat-card dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--line);
+}
+
+.department-stat-card dt {
+  color: var(--ink-soft);
+}
+
+.department-stat-card dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  background: rgba(232, 87, 26, 0.15);
+  color: #ffbf9d;
+  font-size: 0.74rem;
 }
 
 /* ── EMPLOYEE LIST ── */
@@ -372,8 +452,10 @@ td.code {
 
 /* ── RESPONSIVE ── */
 @media (max-width: 920px) {
-  .panel-scan,
-  .panel-manual {
+  .panel-manual,
+  .panel-departments,
+  .panel-assignment,
+  .panel-department-stats {
     grid-column: span 12;
   }
 
@@ -392,8 +474,11 @@ td.code {
     grid-template-columns: 1fr;
   }
 
-  .form-inline {
+  .department-item,
+  .actions,
+  .panel-head {
     flex-direction: column;
+    align-items: stretch;
   }
 
   .flex-between {

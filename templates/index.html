@@ -12,27 +12,58 @@
       <header class="hero">
         <p class="kicker">PME - 20 collaborateurs</p>
         <h1>JustInTime</h1>
-        <p class="subtitle">Pointage RFID et manuel en temps reel, avec vue d'ensemble des presences.</p>
+        <p class="subtitle">Gestion des presences avec organisation par departement.</p>
       </header>
-
-      <section class="panel panel-scan" aria-labelledby="scan-title">
-        <h2 id="scan-title">Badge RFID</h2>
-        <p>Scannez le badge puis validez avec Entree.</p>
-        <form id="rfid-form" class="form-inline">
-          <label for="badge-input" class="sr-only">Badge RFID</label>
-          <input id="badge-input" name="badge" type="text" autocomplete="off" placeholder="Ex: RFID-1001" required />
-          <button type="submit">Pointer</button>
-        </form>
-      </section>
 
       <section class="panel panel-manual" aria-labelledby="manual-title">
         <h2 id="manual-title">Pointage manuel</h2>
         <form id="manual-form" class="manual-grid">
-          <label for="employee-select">Employe</label>
+          <label for="employee-select">Collaborateur</label>
           <select id="employee-select" required></select>
           <div class="actions">
             <button type="button" id="btn-in" class="btn-in">Entree</button>
             <button type="button" id="btn-out" class="btn-out">Sortie</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel panel-departments" aria-labelledby="department-title">
+        <div class="panel-head">
+          <h2 id="department-title">Departements</h2>
+          <span class="muted">Ajout et modification sans toucher aux donnees existantes</span>
+        </div>
+        <form id="department-form" class="department-grid">
+          <input id="department-id" type="hidden" />
+
+          <label for="department-name">Nom du departement</label>
+          <input id="department-name" type="text" placeholder="Ex: Production" required />
+
+          <label for="department-hours">Heures prevues / semaine / collaborateur</label>
+          <input id="department-hours" type="number" min="1" step="0.5" value="35" required />
+
+          <div class="actions">
+            <button type="submit" id="btn-department-save">Enregistrer</button>
+            <button type="button" id="btn-department-reset" class="ghost">Nouveau</button>
+          </div>
+        </form>
+
+        <div id="department-list" class="department-list"></div>
+      </section>
+
+      <section class="panel panel-assignment" aria-labelledby="assignment-title">
+        <h2 id="assignment-title">Affectation des collaborateurs</h2>
+        <p class="muted">Un collaborateur ne peut appartenir qu'a un seul departement a la fois.</p>
+
+        <form id="assignment-form" class="assignment-grid">
+          <label for="employee-assign-select">Collaborateur</label>
+          <select id="employee-assign-select" required></select>
+
+          <label for="department-select">Departement</label>
+          <select id="department-select"></select>
+
+          <div class="actions">
+            <button type="submit" id="btn-assign">Affecter</button>
+            <button type="button" id="btn-remove-department" class="ghost">Retirer du departement</button>
           </div>
         </form>
       </section>
@@ -54,6 +85,18 @@
           <p>Evenements aujourd'hui</p>
           <strong id="stat-events">0</strong>
         </article>
+        <article class="stat-card">
+          <p>Departements</p>
+          <strong id="stat-departments">0</strong>
+        </article>
+      </section>
+
+      <section class="panel panel-department-stats" aria-labelledby="department-stats-title">
+        <div class="panel-head">
+          <h2 id="department-stats-title">Vue par departement</h2>
+          <span class="muted">Prevu vs preste : jour, semaine et mois</span>
+        </div>
+        <div id="department-stats" class="department-stats"></div>
       </section>
 
       <section class="panel" aria-labelledby="team-title">
@@ -72,6 +115,7 @@
               <tr>
                 <th>Heure</th>
                 <th>Employe</th>
+                <th>Departement</th>
                 <th>Badge</th>
                 <th>Action</th>
                 <th>Source</th>
