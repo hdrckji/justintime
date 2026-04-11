@@ -74,10 +74,44 @@ $user = get_auth_user();
     .employee-row button { padding: 0.4rem 0.8rem; margin-left: 0.3rem; font-size: 0.85rem; }
     .btn-delete { background: var(--warn); color: #0a0a0a; }
     .btn-edit { background: var(--accent); }
+    .department-layout {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: minmax(240px, 320px) 1fr;
+      margin-top: 1.5rem;
+      align-items: start;
+    }
+    .department-card {
+      padding: 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface-2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .department-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      margin-top: 0.35rem;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(91, 141, 239, 0.16);
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
     @media (max-width: 920px) {
       .admin-nav .tab-btn {
         flex: 1 1 calc(50% - 0.5rem);
         max-width: calc(50% - 0.5rem);
+      }
+      .department-layout {
+        grid-template-columns: 1fr;
       }
     }
     @media (max-width: 560px) {
@@ -158,6 +192,12 @@ $user = get_auth_user();
               <option value="0">Non</option>
             </select>
           </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="emp-department">Departement</label>
+            <select id="emp-department">
+              <option value="">Aucun departement</option>
+            </select>
+          </div>
         </div>
         <div class="form-grid-auto" style="margin-top: 0.5rem;">
           <div class="form-group" style="margin: 0; grid-column: span 2;">
@@ -189,6 +229,28 @@ $user = get_auth_user();
 
       <h3 style="margin-top: 2rem;">Liste des collaborateurs</h3>
       <div id="employees-list"></div>
+
+      <div class="department-layout">
+        <div>
+          <h3 style="margin-top: 0;">Departements</h3>
+          <form id="department-form" class="form-group">
+            <label for="department-name">Nouveau departement</label>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <input id="department-name" type="text" placeholder="Ex: Production" required style="flex: 1; min-width: 180px;" />
+              <button type="submit" class="btn-in">Ajouter</button>
+            </div>
+          </form>
+          <p style="color: var(--ink-soft); font-size: 0.9rem; margin: 0;">
+            Pour rattacher ou retirer un collaborateur, utilisez simplement le champ <strong>Departement</strong> dans le formulaire ci-dessus.
+          </p>
+        </div>
+        <div>
+          <h3 style="margin-top: 0;">Liste des departements</h3>
+          <div id="departments-list">
+            <p style="color: var(--ink-soft);">Chargement des departements...</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Modal gestion d'acces employe -->
@@ -378,7 +440,11 @@ $user = get_auth_user();
       empLast: document.getElementById('emp-last'),
       empBadge: document.getElementById('emp-badge'),
       empActive: document.getElementById('emp-active'),
+      empDepartment: document.getElementById('emp-department'),
       employeesList: document.getElementById('employees-list'),
+      departmentForm: document.getElementById('department-form'),
+      departmentName: document.getElementById('department-name'),
+      departmentsList: document.getElementById('departments-list'),
       empAddress:     document.getElementById('emp-address'),
       empLat:         document.getElementById('emp-lat'),
       empLng:         document.getElementById('emp-lng'),
@@ -447,6 +513,44 @@ $user = get_auth_user();
 
     // Collaborateurs
     let empCache = [];
+    let departmentsCache = [];
+
+    function renderDepartmentOptions(preferredValue = '') {
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.empDepartment.value || '');
+
+      els.empDepartment.innerHTML = [
+        '<option value="">Aucun departement</option>',
+        ...departmentsCache.map(d => `<option value="${d.id}">${d.name}</option>`),
+      ].join('');
+
+      if (wanted && departmentsCache.some(d => String(d.id) === wanted)) {
+        els.empDepartment.value = wanted;
+      } else {
+        els.empDepartment.value = '';
+      }
+    }
+
+    async function loadDepartments(preferredValue = '') {
+      try {
+        const data = await api('api/departments.php?action=list');
+        departmentsCache = Array.isArray(data.departments) ? data.departments : [];
+        renderDepartmentOptions(preferredValue);
+
+        els.departmentsList.innerHTML = departmentsCache.length
+          ? departmentsCache.map(d => `
+              <div class="department-card">
+                <div>
+                  <strong>${d.name}</strong><br/>
+                  <small>${Number(d.employee_count) || 0} collaborateur(s)</small>
+                </div>
+                <button class="btn-delete" onclick="deleteDepartment(${d.id})">Supprimer</button>
+              </div>
+            `).join('')
+          : '<p style="color: var(--ink-soft);">Aucun departement pour le moment.</p>';
+      } catch (e) { showToast(e.message, true); }
+    }
 
     async function loadEmployees() {
       try {
@@ -461,6 +565,7 @@ $user = get_auth_user();
             <div>
               <strong>${e.first_name} ${e.last_name}</strong><br/>
               <small>${e.badge_id}</small>
+              ${e.department_name ? `<br/><span class="department-pill">🏷️ ${e.department_name}</span>` : '<br/><small style="color:var(--ink-soft)">Aucun departement</small>'}
               ${e.address ? `<br/><small style="color:var(--ink-soft)">📍 ${e.address}</small>` : ''}
               <br/><small style="color:${e.login_username ? 'var(--ok)' : 'var(--warn)'}">
                 🔑 ${e.login_username ? e.login_username : "Pas d'acces"}
@@ -483,6 +588,8 @@ $user = get_auth_user();
 
         const existingIds = new Set(data.employees.map(e => String(e.id)));
         const preferredId = currentEditId || prevHoursValue;
+        const currentEmployee = data.employees.find(e => String(e.id) === String(currentEditId));
+        renderDepartmentOptions(currentEmployee ? currentEmployee.department_id : '');
 
         if (existingIds.has(prevAbsValue)) {
           els.absEmployee.value = prevAbsValue;
@@ -501,6 +608,7 @@ $user = get_auth_user();
       els.empLast.value   = emp.last_name;
       els.empBadge.value  = emp.badge_id;
       els.empActive.value = emp.active;
+      els.empDepartment.value = emp.department_id ? String(emp.department_id) : '';
       els.empAddress.value   = emp.address || '';
       els.empLat.value       = emp.latitude ?? '';
       els.empLng.value       = emp.longitude ?? '';
@@ -515,7 +623,8 @@ $user = get_auth_user();
       try {
         await api('api/employees.php?action=delete&id=' + id, { method: 'POST' });
         showToast('Employe supprime');
-        loadEmployees();
+        await loadEmployees();
+        await loadDepartments();
       } catch (e) { showToast(e.message, true); }
     };
 
@@ -530,6 +639,7 @@ $user = get_auth_user();
             last_name: els.empLast.value,
             badge_id: els.empBadge.value,
             active: els.empActive.value,
+            department_id: els.empDepartment.value || null,
             address: els.empAddress.value,
             latitude: els.empLat.value !== '' ? parseFloat(els.empLat.value) : null,
             longitude: els.empLng.value !== '' ? parseFloat(els.empLng.value) : null,
@@ -539,9 +649,42 @@ $user = get_auth_user();
         });
         showToast('Collaborateur enregistre');
         els.empForm.reset();
+        els.empDepartment.value = '';
         els.empGeoRadius.value = 200;
         els.empVacDays.value = 25;
-        loadEmployees();
+        await loadEmployees();
+        await loadDepartments();
+      } catch (e) { showToast(e.message, true); }
+    });
+
+    window.deleteDepartment = async (id) => {
+      const dept = departmentsCache.find(d => Number(d.id) === Number(id));
+      const label = dept ? `le departement "${dept.name}"` : 'ce departement';
+      if (!confirm(`Supprimer ${label} ? Les collaborateurs resteront actifs mais sans departement.`)) return;
+      try {
+        await api('api/departments.php?action=delete&id=' + id, { method: 'POST' });
+        showToast('Departement supprime');
+        await loadDepartments();
+        await loadEmployees();
+      } catch (e) { showToast(e.message, true); }
+    };
+
+    els.departmentForm.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const name = els.departmentName.value.trim();
+      if (!name) {
+        showToast('Indiquez un nom de departement.', true);
+        return;
+      }
+      try {
+        await api('api/departments.php?action=create', {
+          method: 'POST',
+          body: JSON.stringify({ name }),
+        });
+        showToast('Departement ajoute');
+        els.departmentForm.reset();
+        await loadDepartments();
+        await loadEmployees();
       } catch (e) { showToast(e.message, true); }
     });
 
@@ -924,6 +1067,7 @@ $user = get_auth_user();
 
     els.vacStatusFilter.addEventListener('change', loadVacationRequests);
 
+    loadDepartments();
     loadEmployees();
     loadAbsences();
     loadVacationRequests();

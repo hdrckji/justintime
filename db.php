@@ -21,7 +21,106 @@ function get_pdo(): PDO
         PDO::ATTR_EMULATE_PREPARES   => false,
     ]);
 
+    ensure_department_schema($pdo);
+
     return $pdo;
+}
+
+function jit_table_exists(PDO $pdo, string $table): bool
+{
+    $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+    );
+    $stmt->execute([$safe]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function jit_column_exists(PDO $pdo, string $table, string $column): bool
+{
+    if (!jit_table_exists($pdo, $table)) {
+        return false;
+    }
+
+    $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+    $stmt = $pdo->query("SHOW COLUMNS FROM `{$safe}`");
+    foreach ($stmt->fetchAll() as $row) {
+        if (($row['Field'] ?? '') === $column) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function jit_index_exists(PDO $pdo, string $table, string $index): bool
+{
+    if (!jit_table_exists($pdo, $table)) {
+        return false;
+    }
+
+    $safeTable = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+    $safeIndex = preg_replace('/[^a-zA-Z0-9_]/', '', $index);
+    $rows = $pdo->query("SHOW INDEX FROM `{$safeTable}`")->fetchAll();
+    foreach ($rows as $row) {
+        if (($row['Key_name'] ?? '') === $safeIndex) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function jit_foreign_key_exists(PDO $pdo, string $table, string $constraint): bool
+{
+    $safeTable = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+    $safeConstraint = preg_replace('/[^a-zA-Z0-9_]/', '', $constraint);
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM information_schema.table_constraints
+         WHERE table_schema = DATABASE()
+           AND table_name = ?
+           AND constraint_name = ?
+           AND constraint_type = ?'
+    );
+    $stmt->execute([$safeTable, $safeConstraint, 'FOREIGN KEY']);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function ensure_department_schema(PDO $pdo): void
+{
+    if (!jit_table_exists($pdo, 'employees')) {
+        return;
+    }
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS departments (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    if (!jit_column_exists($pdo, 'employees', 'department_id')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN department_id INT NULL DEFAULT NULL AFTER active");
+    }
+
+    if (!jit_index_exists($pdo, 'employees', 'idx_employees_department')) {
+        $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_department (department_id)");
+    }
+
+    if (!jit_foreign_key_exists($pdo, 'employees', 'fk_employees_department')) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE employees
+                 ADD CONSTRAINT fk_employees_department
+                 FOREIGN KEY (department_id) REFERENCES departments(id)
+                 ON DELETE SET NULL"
+            );
+        } catch (Throwable $e) {
+            // Ignorer si la contrainte existe deja sous un autre nom.
+        }
+    }
 }
 
 function format_iso_timestamp(?string $timestamp): string

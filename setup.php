@@ -41,6 +41,19 @@ try {
         return false;
     };
 
+    $foreign_key_exists = function (string $table, string $constraint) use ($pdo): bool {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*)
+             FROM information_schema.table_constraints
+             WHERE table_schema = DATABASE()
+               AND table_name = ?
+               AND constraint_name = ?
+               AND constraint_type = ?'
+        );
+        $stmt->execute([$table, $constraint, 'FOREIGN KEY']);
+        return (int) $stmt->fetchColumn() > 0;
+    };
+
     // --- TABLE employees ---
     // Creation avec le nouveau schema si elle n'existe pas
     $pdo->exec(
@@ -100,6 +113,33 @@ try {
         $pdo->exec("ALTER TABLE employees ADD COLUMN vacation_days INT NOT NULL DEFAULT 25");
     }
     $output[] = '✅ Colonnes employes geo + conges OK.';
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS departments (
+            id          INT           PRIMARY KEY AUTO_INCREMENT,
+            name        VARCHAR(100)  NOT NULL UNIQUE,
+            created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    if (!$column_exists('employees', 'department_id')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN department_id INT NULL DEFAULT NULL AFTER active");
+    }
+    if (!$index_exists('employees', 'idx_employees_department')) {
+        $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_department (department_id)");
+    }
+    if (!$foreign_key_exists('employees', 'fk_employees_department')) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE employees
+                 ADD CONSTRAINT fk_employees_department
+                 FOREIGN KEY (department_id) REFERENCES departments(id)
+                 ON DELETE SET NULL"
+            );
+        } catch (Throwable $e) {
+            // Ignore si la contrainte existe deja sous un autre nom.
+        }
+    }
+    $output[] = '✅ Gestion des departements OK.';
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS attendance_events (

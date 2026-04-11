@@ -41,6 +41,7 @@ try {
     $has_lng   = has_col($emp_cols, 'longitude');
     $has_geo   = has_col($emp_cols, 'geo_radius');
     $has_vac   = has_col($emp_cols, 'vacation_days');
+    $has_department = has_col($emp_cols, 'department_id') && table_exists($pdo, 'departments');
     $has_user_employee_id = has_col($usr_cols, 'employee_id');
 
     if ($action === 'list' && $_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -61,12 +62,15 @@ try {
         $lng_expr     = $has_lng ? "e.longitude" : "NULL AS longitude";
         $geo_expr     = $has_geo ? "COALESCE(e.geo_radius, 200) AS geo_radius" : "200 AS geo_radius";
         $vac_expr     = $has_vac ? "COALESCE(e.vacation_days, 25) AS vacation_days" : "25 AS vacation_days";
+        $department_id_expr = $has_department ? "e.department_id" : "NULL AS department_id";
+        $department_name_expr = $has_department ? "COALESCE(d.name, '') AS department_name" : "'' AS department_name";
         $login_expr   = $has_user_employee_id
             ? "(SELECT u.username FROM users u WHERE u.employee_id = e.id AND u.role = 'employee' LIMIT 1) AS login_username"
             : "NULL AS login_username";
 
         $order_by = $has_last && $has_first ? 'e.last_name, e.first_name' : 'e.id DESC';
         $where    = $include_inactive ? '' : 'WHERE e.active = 1';
+        $join_departments = $has_department ? 'LEFT JOIN departments d ON d.id = e.department_id' : '';
 
         $sql = "SELECT e.id,
                 {$first_expr},
@@ -77,8 +81,11 @@ try {
                 {$lng_expr},
                 {$geo_expr},
                 {$vac_expr},
+                {$department_id_expr},
+                {$department_name_expr},
                 {$login_expr}
              FROM employees e
+             {$join_departments}
              {$where}
              ORDER BY {$order_by}";
 
@@ -188,10 +195,22 @@ try {
         $longitude = isset($payload['longitude']) && $payload['longitude'] !== '' ? (float) $payload['longitude'] : null;
         $geo_radius = (int) ($payload['geo_radius']    ?? 200);
         $vac_days   = (int) ($payload['vacation_days'] ?? 25);
+        $department_id = isset($payload['department_id']) && (int) $payload['department_id'] > 0
+            ? (int) $payload['department_id']
+            : null;
 
         if (!$first || !$last || !$badge) {
             json_response(['error' => 'Tous les champs sont obligatoires.'], 400);
             exit;
+        }
+
+        if ($has_department && $department_id !== null) {
+            $stmt = $pdo->prepare('SELECT id FROM departments WHERE id = ? LIMIT 1');
+            $stmt->execute([$department_id]);
+            if (!$stmt->fetch()) {
+                json_response(['error' => 'Departement introuvable.'], 400);
+                exit;
+            }
         }
 
         if ($id) {
@@ -235,6 +254,10 @@ try {
             if ($has_vac) {
                 $set[] = 'vacation_days = ?';
                 $vals[] = $vac_days;
+            }
+            if ($has_department) {
+                $set[] = 'department_id = ?';
+                $vals[] = $department_id;
             }
 
             $vals[] = $id;
@@ -292,6 +315,11 @@ try {
             if ($has_vac) {
                 $cols[] = 'vacation_days';
                 $vals[] = $vac_days;
+                $phs[] = '?';
+            }
+            if ($has_department) {
+                $cols[] = 'department_id';
+                $vals[] = $department_id;
                 $phs[] = '?';
             }
 
