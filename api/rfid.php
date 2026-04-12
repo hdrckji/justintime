@@ -1,6 +1,10 @@
 <?php
 require_once __DIR__ . '/../db.php';
 
+const RFID_COOLDOWN_MS = 2000;
+const RFID_CLOCK_REFRESH_MS = 1000;
+const RFID_CONFIG_REFRESH_MS = 300000;
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
@@ -22,9 +26,9 @@ if ($method === 'GET') {
         'server_time' => date(DATE_ATOM),
         'timezone' => date_default_timezone_get(),
         'rfid_endpoint' => '/api/attendance/rfid',
-        'cooldown_ms' => $settings['cooldown_ms'],
-        'clock_refresh_ms' => $settings['clock_refresh_ms'],
-        'config_refresh_ms' => $settings['config_refresh_ms'],
+        'cooldown_ms' => RFID_COOLDOWN_MS,
+        'clock_refresh_ms' => RFID_CLOCK_REFRESH_MS,
+        'config_refresh_ms' => RFID_CONFIG_REFRESH_MS,
         'display_message' => $settings['display_message'],
         'success_message' => $settings['success_message'],
         'led_enabled' => (bool) $settings['led_enabled'],

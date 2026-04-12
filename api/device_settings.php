@@ -31,10 +31,6 @@ try {
     $displayMessage = trim((string) ($payload['display_message'] ?? $current['display_message']));
     $successMessage = trim((string) ($payload['success_message'] ?? $current['success_message']));
 
-    $cooldownMs = isset($payload['cooldown_ms']) ? (int) $payload['cooldown_ms'] : (int) $current['cooldown_ms'];
-    $clockRefreshMs = isset($payload['clock_refresh_ms']) ? (int) $payload['clock_refresh_ms'] : (int) $current['clock_refresh_ms'];
-    $configRefreshMs = isset($payload['config_refresh_ms']) ? (int) $payload['config_refresh_ms'] : (int) $current['config_refresh_ms'];
-
     $ledEnabled = array_key_exists('led_enabled', $payload)
         ? filter_var($payload['led_enabled'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)
         : (bool) $current['led_enabled'];
@@ -62,28 +58,10 @@ try {
         exit;
     }
 
-    if ($cooldownMs < 500 || $cooldownMs > 15000) {
-        json_response(['error' => 'Cooldown invalide (500 a 15000 ms).'], 400);
-        exit;
-    }
-
-    if ($clockRefreshMs < 250 || $clockRefreshMs > 10000) {
-        json_response(['error' => 'Rafraichissement horloge invalide (250 a 10000 ms).'], 400);
-        exit;
-    }
-
-    if ($configRefreshMs < 10000 || $configRefreshMs > 3600000) {
-        json_response(['error' => 'Rafraichissement config invalide (10000 a 3600000 ms).'], 400);
-        exit;
-    }
-
     save_device_settings($pdo, [
         'site_name' => $siteName,
         'display_message' => $displayMessage,
         'success_message' => $successMessage,
-        'cooldown_ms' => $cooldownMs,
-        'clock_refresh_ms' => $clockRefreshMs,
-        'config_refresh_ms' => $configRefreshMs,
         'led_enabled' => $ledEnabled,
         'buzzer_enabled' => $buzzerEnabled,
     ]);

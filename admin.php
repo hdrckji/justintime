@@ -476,18 +476,6 @@ $user = get_auth_user();
               <option value="0">Non</option>
             </select>
           </div>
-          <div class="form-group" style="margin: 0;">
-            <label for="cfg-cooldown-ms">Cooldown badge (ms)</label>
-            <input id="cfg-cooldown-ms" type="number" min="500" max="15000" step="100" required />
-          </div>
-          <div class="form-group" style="margin: 0;">
-            <label for="cfg-clock-refresh-ms">Rafraichissement horloge (ms)</label>
-            <input id="cfg-clock-refresh-ms" type="number" min="250" max="10000" step="50" required />
-          </div>
-          <div class="form-group" style="margin: 0;">
-            <label for="cfg-config-refresh-ms">Rafraichissement config (ms)</label>
-            <input id="cfg-config-refresh-ms" type="number" min="10000" max="3600000" step="1000" required />
-          </div>
         </div>
         <button type="submit" class="btn-in" style="margin-top: 1rem;">Enregistrer la configuration boitier</button>
       </form>
@@ -547,9 +535,6 @@ $user = get_auth_user();
       cfgSuccessMessage: document.getElementById('cfg-success-message'),
       cfgLedEnabled: document.getElementById('cfg-led-enabled'),
       cfgBuzzerEnabled: document.getElementById('cfg-buzzer-enabled'),
-      cfgCooldownMs: document.getElementById('cfg-cooldown-ms'),
-      cfgClockRefreshMs: document.getElementById('cfg-clock-refresh-ms'),
-      cfgConfigRefreshMs: document.getElementById('cfg-config-refresh-ms'),
       toast: document.getElementById('toast'),
     };
 
@@ -1154,9 +1139,6 @@ $user = get_auth_user();
         els.cfgSuccessMessage.value = s.success_message || 'Pointage enregistre';
         els.cfgLedEnabled.value = s.led_enabled ? '1' : '0';
         els.cfgBuzzerEnabled.value = s.buzzer_enabled ? '1' : '0';
-        els.cfgCooldownMs.value = Number(s.cooldown_ms || 2000);
-        els.cfgClockRefreshMs.value = Number(s.clock_refresh_ms || 1000);
-        els.cfgConfigRefreshMs.value = Number(s.config_refresh_ms || 300000);
       } catch (e) {
         showToast(e.message, true);
       }
@@ -1173,9 +1155,6 @@ $user = get_auth_user();
             success_message: els.cfgSuccessMessage.value.trim(),
             led_enabled: els.cfgLedEnabled.value === '1',
             buzzer_enabled: els.cfgBuzzerEnabled.value === '1',
-            cooldown_ms: Number(els.cfgCooldownMs.value),
-            clock_refresh_ms: Number(els.cfgClockRefreshMs.value),
-            config_refresh_ms: Number(els.cfgConfigRefreshMs.value),
           }),
         });
         showToast('Configuration boitier enregistree');
