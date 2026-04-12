@@ -378,22 +378,9 @@ $user = get_auth_user();
         <div class="form-grid-auto" style="margin-top: 0.5rem;">
           <div class="form-group" style="margin: 0; grid-column: span 2;">
             <label for="emp-address">Adresse (lieu de travail)</label>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-              <input id="emp-address" type="text" placeholder="Ex: 12 rue de la Paix, Paris" style="flex:1; min-width: 180px;" />
-              <button type="button" id="btn-geocode" style="padding: 0.5rem 0.8rem; background: var(--accent); color:#fff; border:0; border-radius:6px; cursor:pointer; white-space:nowrap;">📍 Geocoder</button>
-            </div>
-          </div>
-          <div class="form-group" style="margin: 0;">
-            <label for="emp-lat">Latitude</label>
-            <input id="emp-lat" type="number" step="0.0000001" placeholder="48.8566" />
-          </div>
-          <div class="form-group" style="margin: 0;">
-            <label for="emp-lng">Longitude</label>
-            <input id="emp-lng" type="number" step="0.0000001" placeholder="2.3522" />
-          </div>
-          <div class="form-group" style="margin: 0;">
-            <label for="emp-geo-radius">Rayon GPS (metres)</label>
-            <input id="emp-geo-radius" type="number" min="50" max="5000" value="200" />
+            <input id="emp-address" type="text" placeholder="Ex: 12 rue de la Paix, Paris" style="width:100%;" />
+            <input id="emp-lat" type="hidden" />
+            <input id="emp-lng" type="hidden" />
           </div>
           <div class="form-group" style="margin: 0;">
             <label for="emp-vacation-days">Jours de conges/an</label>
@@ -728,9 +715,7 @@ $user = get_auth_user();
       empAddress:     document.getElementById('emp-address'),
       empLat:         document.getElementById('emp-lat'),
       empLng:         document.getElementById('emp-lng'),
-      empGeoRadius:   document.getElementById('emp-geo-radius'),
       empVacDays:     document.getElementById('emp-vacation-days'),
-      btnGeocode:     document.getElementById('btn-geocode'),
       absenceForm: document.getElementById('absence-form'),
       absEmployee: document.getElementById('abs-employee'),
       absType: document.getElementById('abs-type'),
@@ -959,11 +944,10 @@ $user = get_auth_user();
       els.empBadge.value  = emp.badge_id;
       els.empActive.value = emp.active;
       els.empDepartment.value = emp.department_id ? String(emp.department_id) : '';
-      els.empAddress.value   = emp.address || '';
-      els.empLat.value       = emp.latitude ?? '';
-      els.empLng.value       = emp.longitude ?? '';
-      els.empGeoRadius.value = emp.geo_radius || 200;
-      els.empVacDays.value   = emp.vacation_days || 25;
+      els.empAddress.value = emp.address || '';
+      els.empLat.value     = emp.latitude ?? '';
+      els.empLng.value     = emp.longitude ?? '';
+      els.empVacDays.value = emp.vacation_days || 25;
       document.getElementById('employees').scrollIntoView({ behavior: 'smooth' });
       els.empFirst.focus();
     };
@@ -993,14 +977,13 @@ $user = get_auth_user();
             address: els.empAddress.value,
             latitude: els.empLat.value !== '' ? parseFloat(els.empLat.value) : null,
             longitude: els.empLng.value !== '' ? parseFloat(els.empLng.value) : null,
-            geo_radius: parseInt(els.empGeoRadius.value, 10) || 200,
+            geo_radius: 300,
             vacation_days: parseInt(els.empVacDays.value, 10) || 25,
           }),
         });
         showToast('Collaborateur enregistre');
         els.empForm.reset();
         els.empDepartment.value = '';
-        els.empGeoRadius.value = 200;
         els.empVacDays.value = 25;
         await loadEmployees();
         await loadDepartments();
@@ -1700,34 +1683,24 @@ $user = get_auth_user();
     showHoursSection('editor');
     renderHoursGrid([]);
 
-    // Geocodage via Nominatim (OpenStreetMap)
-    els.btnGeocode.addEventListener('click', async () => {
-      const addr = els.empAddress.value.trim();
-      if (!addr) {
-        showToast('Saisissez une adresse d\'abord.', true);
-        return;
-      }
-      els.btnGeocode.disabled = true;
-      els.btnGeocode.textContent = '...';
+    // Geocodage silencieux via Nominatim (declenchement auto au blur de l'adresse)
+    async function silentGeocode(addr) {
+      if (!addr) return;
       try {
         const res = await fetch(
           'https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(addr) + '&format=json&limit=1',
           { headers: { 'Accept-Language': 'fr' } }
         );
         const data = await res.json();
-        if (!data.length) {
-          showToast('Adresse introuvable. Essayez avec plus de details.', true);
-          return;
+        if (data.length) {
+          els.empLat.value = parseFloat(data[0].lat).toFixed(7);
+          els.empLng.value = parseFloat(data[0].lon).toFixed(7);
         }
-        els.empLat.value = parseFloat(data[0].lat).toFixed(7);
-        els.empLng.value = parseFloat(data[0].lon).toFixed(7);
-        showToast('Coordonnees trouvees : ' + els.empLat.value + ', ' + els.empLng.value);
-      } catch (e) {
-        showToast('Erreur geocodage : ' + e.message, true);
-      } finally {
-        els.btnGeocode.disabled = false;
-        els.btnGeocode.textContent = '📍 Geocoder';
-      }
+      } catch (_) { /* silencieux */ }
+    }
+    els.empAddress.addEventListener('blur', () => {
+      const addr = els.empAddress.value.trim();
+      if (addr) silentGeocode(addr);
     });
 
     // Modal acces employe
