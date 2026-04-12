@@ -322,7 +322,8 @@ $user = get_auth_user();
         <a href="dashboard.php">📊 Tableau de bord</a>
         <a href="reporting.php">📈 Reporting</a>
         <a href="admin.php">🔧 Admin</a>
-        <span class="app-nav-user">👤 <strong><?= htmlspecialchars($user['username']) ?></strong></span>
+          <a href="corrections.php">✏️ Corrections</a>
+          <span class="app-nav-user">👤 <strong><?= htmlspecialchars($user['username']) ?></strong></span>
         <a href="logout.php">🚪 Logout</a>
       </div>
     </div>

@@ -222,7 +222,8 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
         <a href="dashboard.php">📊 Tableau de bord</a>
         <a href="reporting.php">📈 Reporting</a>
         <?php if ($user['role'] === 'admin'): ?><a href="admin.php">🔧 Admin</a><?php endif; ?>
-        <span class="app-nav-user">👤 <strong><?= htmlspecialchars($user['username']) ?></strong></span>
+          <a href="corrections.php">✏️ Corrections</a>
+          <span class="app-nav-user">👤 <strong><?= htmlspecialchars($user['username']) ?></strong></span>
         <a href="logout.php">🚪 Logout</a>
       </div>
     </div>
