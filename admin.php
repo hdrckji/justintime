@@ -140,6 +140,27 @@ $user = get_auth_user();
       padding-top: 1.2rem;
       border-top: 1px dashed var(--line);
     }
+    .hours-section-switch {
+      display: flex;
+      gap: 0.5rem;
+      margin: 0.8rem 0 1rem;
+      flex-wrap: wrap;
+    }
+    .hours-section-btn {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--ink-soft);
+      font: inherit;
+      font-weight: 600;
+      padding: 0.48rem 0.8rem;
+      cursor: pointer;
+    }
+    .hours-section-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
     .hours-visual-title {
       margin: 0 0 0.3rem 0;
       font-size: 1.05rem;
@@ -459,6 +480,12 @@ $user = get_auth_user();
     <!-- Onglet Horaires -->
     <div id="hours" class="tab-content panel">
       <h2>Horaires prevus par collaborateur</h2>
+      <div class="hours-section-switch">
+        <button type="button" id="hours-show-editor" class="hours-section-btn active">✍️ Encodage / modification</button>
+        <button type="button" id="hours-show-visual" class="hours-section-btn">📊 Consultation visuelle</button>
+      </div>
+
+      <div id="hours-editor-block">
       <div class="admin-top-grid">
         <div class="form-group">
           <label for="hours-employee">Collaborateur</label>
@@ -540,8 +567,9 @@ $user = get_auth_user();
         </div>
       </div>
       <button id="btn-save-hours" class="btn-in" style="margin-top: 1rem;">Enregistrer horaires</button>
+      </div>
 
-      <div class="hours-visual-block">
+      <div id="hours-visual-block" class="hours-visual-block" style="display:none;">
         <h3 class="hours-visual-title">Consultation visuelle des horaires</h3>
         <p class="hours-visual-subtitle">Consulte l'equilibre des plages horaires par collaborateur ou par departement.</p>
 
@@ -573,6 +601,8 @@ $user = get_auth_user();
             <input id="hours-view-week-start" type="date" />
           </div>
         </div>
+
+        <button type="button" id="btn-print-hours" class="btn-edit" style="margin-top: 0.2rem;">🖨️ Imprimer la semaine</button>
 
         <div id="hours-balance-summary" class="hours-balance-summary"></div>
         <div id="hours-visual-container"></div>
@@ -707,6 +737,10 @@ $user = get_auth_user();
       weeklyHoursTotal: document.getElementById('weekly-hours-total'),
       hoursGrid: document.getElementById('hours-grid'),
       btnSaveHours: document.getElementById('btn-save-hours'),
+      hoursShowEditor: document.getElementById('hours-show-editor'),
+      hoursShowVisual: document.getElementById('hours-show-visual'),
+      hoursEditorBlock: document.getElementById('hours-editor-block'),
+      hoursVisualBlock: document.getElementById('hours-visual-block'),
       hoursViewScope: document.getElementById('hours-view-scope'),
       hoursViewEmployeeWrap: document.getElementById('hours-view-employee-wrap'),
       hoursViewEmployee: document.getElementById('hours-view-employee'),
@@ -715,6 +749,7 @@ $user = get_auth_user();
       hoursViewApplyTo: document.getElementById('hours-view-apply-to'),
       hoursViewWeekWrap: document.getElementById('hours-view-week-wrap'),
       hoursViewWeekStart: document.getElementById('hours-view-week-start'),
+      btnPrintHours: document.getElementById('btn-print-hours'),
       hoursBalanceSummary: document.getElementById('hours-balance-summary'),
       hoursVisualContainer: document.getElementById('hours-visual-container'),
       vacStatusFilter: document.getElementById('vac-status-filter'),
@@ -1066,6 +1101,18 @@ $user = get_auth_user();
       }
     }
 
+    function showHoursSection(section) {
+      const showEditor = section !== 'visual';
+      els.hoursEditorBlock.style.display = showEditor ? 'block' : 'none';
+      els.hoursVisualBlock.style.display = showEditor ? 'none' : 'block';
+      els.hoursShowEditor.classList.toggle('active', showEditor);
+      els.hoursShowVisual.classList.toggle('active', !showEditor);
+
+      if (!showEditor) {
+        loadHoursVisual();
+      }
+    }
+
     function updateHoursViewVisibility() {
       const scope = els.hoursViewScope.value;
       const applyTo = els.hoursViewApplyTo.value;
@@ -1078,6 +1125,15 @@ $user = get_auth_user();
     function formatHours(value) {
       const num = Number(value) || 0;
       return num.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
     }
 
     function scheduleFromRows(rows = []) {
@@ -1176,6 +1232,147 @@ $user = get_auth_user();
       const url = 'api/scheduled_hours.php?action=get&employee_id=' + encodeURIComponent(employeeId) + hoursViewWeekParam();
       const data = await api(url);
       return data.hours || [];
+    }
+
+    function selectedWeekLabel() {
+      if (els.hoursViewApplyTo.value !== 'week') {
+        return 'Horaire de reference';
+      }
+
+      ensureHoursViewWeekDefault();
+      const mondayIso = toMondayISO(els.hoursViewWeekStart.value);
+      const monday = new Date(mondayIso + 'T00:00:00');
+      const sunday = new Date(monday);
+      sunday.setDate(sunday.getDate() + 6);
+
+      const from = monday.toLocaleDateString('fr-FR');
+      const to = sunday.toLocaleDateString('fr-FR');
+      return `Semaine du ${from} au ${to}`;
+    }
+
+    function openPrintableHours(title, contentHtml) {
+      const popup = window.open('', '_blank', 'width=1080,height=760');
+      if (!popup) {
+        showToast('Autorise les popups pour lancer l\'impression.', true);
+        return;
+      }
+
+      popup.document.write(`<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+    h1 { margin: 0 0 6px; font-size: 20px; }
+    p.meta { margin: 0 0 14px; color: #444; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #bbb; padding: 6px 8px; font-size: 12px; text-align: left; }
+    th { background: #f2f4f7; }
+    .total-row td { font-weight: 700; background: #f7f9fb; }
+    .section-title { margin-top: 18px; font-size: 15px; }
+    @media print {
+      body { margin: 10mm; }
+    }
+  </style>
+</head>
+<body>
+  ${contentHtml}
+</body>
+</html>`);
+      popup.document.close();
+      popup.focus();
+      setTimeout(() => popup.print(), 220);
+    }
+
+    async function printHoursView() {
+      const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+      const scope = els.hoursViewScope.value;
+      const weekLabel = selectedWeekLabel();
+
+      if (scope === 'employee') {
+        const employeeId = Number(els.hoursViewEmployee.value || 0);
+        if (!employeeId) {
+          showToast('Choisis un collaborateur avant impression.', true);
+          return;
+        }
+
+        const employee = empCache.find(e => Number(e.id) === employeeId);
+        const rows = await fetchScheduleRows(employeeId);
+        const schedule = scheduleFromRows(rows);
+
+        const bodyRows = dayOrder.map(day => {
+          const h = schedule.hours[day] || 0;
+          const range = schedule.ranges[day] || '-';
+          return `<tr><td>${escapeHtml(dayLabels[day])}</td><td>${escapeHtml(range)}</td><td>${escapeHtml(formatHours(h))} h</td></tr>`;
+        }).join('');
+
+        const total = schedule.hours.reduce((acc, h) => acc + h, 0);
+        const title = `Horaire hebdomadaire - ${employee ? `${employee.first_name} ${employee.last_name}` : 'Collaborateur'}`;
+        const html = `
+          <h1>${escapeHtml(title)}</h1>
+          <p class="meta">${escapeHtml(weekLabel)}</p>
+          <table>
+            <thead><tr><th>Jour</th><th>Plage</th><th>Heures</th></tr></thead>
+            <tbody>
+              ${bodyRows}
+              <tr class="total-row"><td colspan="2">Total semaine</td><td>${escapeHtml(formatHours(total))} h</td></tr>
+            </tbody>
+          </table>
+        `;
+        openPrintableHours(title, html);
+        return;
+      }
+
+      const departmentId = Number(els.hoursViewDepartment.value || 0);
+      if (!departmentId) {
+        showToast('Choisis un departement avant impression.', true);
+        return;
+      }
+
+      const department = departmentsCache.find(d => Number(d.id) === departmentId);
+      const employees = empCache.filter(e => Number(e.department_id) === departmentId);
+      if (!employees.length) {
+        showToast('Aucun collaborateur dans ce departement.', true);
+        return;
+      }
+
+      const perEmployeeRows = await Promise.all(
+        employees.map(async e => ({
+          employee: e,
+          schedule: scheduleFromRows(await fetchScheduleRows(e.id)),
+        }))
+      );
+
+      const headerDays = dayOrder.map(day => `<th>${escapeHtml(dayLabels[day].slice(0, 3))}</th>`).join('');
+      const tableRows = perEmployeeRows.map(item => {
+        const hoursByDay = dayOrder.map(day => `<td>${escapeHtml(formatHours(item.schedule.hours[day] || 0))}</td>`).join('');
+        const total = item.schedule.hours.reduce((acc, h) => acc + h, 0);
+        return `<tr><td>${escapeHtml(item.employee.first_name + ' ' + item.employee.last_name)}</td>${hoursByDay}<td>${escapeHtml(formatHours(total))}</td></tr>`;
+      }).join('');
+
+      const aggregate = Array(7).fill(0);
+      perEmployeeRows.forEach(item => {
+        dayOrder.forEach(day => {
+          aggregate[day] += Number(item.schedule.hours[day] || 0);
+        });
+      });
+      const aggregateCells = dayOrder.map(day => `<td>${escapeHtml(formatHours(aggregate[day]))}</td>`).join('');
+      const aggregateTotal = aggregate.reduce((acc, h) => acc + h, 0);
+
+      const title = `Horaire equipe - ${department ? department.name : 'Departement'}`;
+      const html = `
+        <h1>${escapeHtml(title)}</h1>
+        <p class="meta">${escapeHtml(weekLabel)}</p>
+        <table>
+          <thead><tr><th>Collaborateur</th>${headerDays}<th>Total</th></tr></thead>
+          <tbody>
+            ${tableRows}
+            <tr class="total-row"><td>Equipe</td>${aggregateCells}<td>${escapeHtml(formatHours(aggregateTotal))}</td></tr>
+          </tbody>
+        </table>
+      `;
+      openPrintableHours(title, html);
     }
 
     async function loadHoursVisual() {
@@ -1356,6 +1553,15 @@ $user = get_auth_user();
       els.hoursViewWeekStart.value = toMondayISO(els.hoursViewWeekStart.value);
       loadHoursVisual();
     });
+    els.hoursShowEditor.addEventListener('click', () => showHoursSection('editor'));
+    els.hoursShowVisual.addEventListener('click', () => showHoursSection('visual'));
+    els.btnPrintHours.addEventListener('click', async () => {
+      try {
+        await printHoursView();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    });
 
     els.btnSaveHours.addEventListener('click', async () => {
       const empId = els.hoursEmployee.value;
@@ -1423,6 +1629,7 @@ $user = get_auth_user();
     ensureHoursViewWeekDefault();
     updateHoursModeVisibility();
     updateHoursViewVisibility();
+    showHoursSection('editor');
     renderHoursGrid([]);
 
     // Geocodage via Nominatim (OpenStreetMap)
