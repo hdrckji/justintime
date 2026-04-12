@@ -175,12 +175,28 @@ try {
                 json_response(['error' => 'ID invalide.'], 400);
                 exit;
             }
+
+            $existingStmt = $pdo->prepare('SELECT id, employee_id, event_type, source, timestamp FROM attendance_events WHERE id = ?');
+            $existingStmt->execute([$id]);
+            $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$existing) {
+                json_response(['error' => 'Pointage introuvable.'], 404);
+                exit;
+            }
+
+            assert_period_open($pdo, (string) $existing['timestamp'], 'Cette periode est cloturee: suppression impossible.');
+
             $stmt = $pdo->prepare('DELETE FROM attendance_events WHERE id = ?');
             $stmt->execute([$id]);
             if ($stmt->rowCount() === 0) {
                 json_response(['error' => 'Pointage introuvable.'], 404);
                 exit;
             }
+
+            log_audit_event($pdo, $user, 'delete_attendance_event', 'attendance_event', (string) $id, 'Suppression de pointage', [
+                'before' => $existing,
+            ]);
+
             json_response(['success' => true]);
             exit;
         }
@@ -205,6 +221,17 @@ try {
             }
             $cleanTs = $dt->format('Y-m-d H:i:s');
 
+            $beforeStmt = $pdo->prepare('SELECT id, employee_id, event_type, source, timestamp FROM attendance_events WHERE id = ?');
+            $beforeStmt->execute([$id]);
+            $before = $beforeStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$before) {
+                json_response(['error' => 'Pointage introuvable.'], 404);
+                exit;
+            }
+
+            assert_period_open($pdo, (string) $before['timestamp'], 'Cette periode est cloturee: modification impossible.');
+            assert_period_open($pdo, $cleanTs, 'Cette periode est cloturee: modification impossible.');
+
             $stmt = $pdo->prepare('UPDATE attendance_events SET event_type = ?, timestamp = ? WHERE id = ?');
             $stmt->execute([$eventType, $cleanTs, $id]);
 
@@ -215,6 +242,15 @@ try {
                 json_response(['error' => 'Pointage introuvable.'], 404);
                 exit;
             }
+
+            log_audit_event($pdo, $user, 'edit_attendance_event', 'attendance_event', (string) $id, 'Modification de pointage', [
+                'before' => $before,
+                'after' => [
+                    'event_type' => $eventType,
+                    'timestamp' => $cleanTs,
+                ],
+            ]);
+
             json_response(['success' => true, 'timestamp' => $cleanTs]);
             exit;
         }
@@ -238,6 +274,7 @@ try {
                 exit;
             }
             $cleanTs = $dt->format('Y-m-d H:i:s');
+            assert_period_open($pdo, $cleanTs, 'Cette periode est cloturee: ajout impossible.');
 
             $chk = $pdo->prepare('SELECT id FROM employees WHERE id = ? AND active = 1');
             $chk->execute([$empId]);
@@ -251,7 +288,19 @@ try {
                  VALUES (?, ?, 'manual', ?)"
             );
             $stmt->execute([$empId, $eventType, $cleanTs]);
-            json_response(['success' => true, 'id' => (int) $pdo->lastInsertId(), 'timestamp' => $cleanTs]);
+            $newId = (int) $pdo->lastInsertId();
+
+            log_audit_event($pdo, $user, 'add_attendance_event', 'attendance_event', (string) $newId, 'Ajout manuel de pointage', [
+                'after' => [
+                    'id' => $newId,
+                    'employee_id' => $empId,
+                    'event_type' => $eventType,
+                    'source' => 'manual',
+                    'timestamp' => $cleanTs,
+                ],
+            ]);
+
+            json_response(['success' => true, 'id' => $newId, 'timestamp' => $cleanTs]);
             exit;
         }
 

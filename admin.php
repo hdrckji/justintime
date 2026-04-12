@@ -61,6 +61,48 @@ $user = get_auth_user();
       background: var(--surface-2); color: var(--ink);
       border: 1px solid var(--line); border-radius: 8px; font: inherit;
     }
+    .field-head-inline {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.8rem;
+      margin-bottom: 0.35rem;
+      flex-wrap: wrap;
+    }
+    .field-head-inline label {
+      margin-bottom: 0;
+    }
+    .inline-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.6rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 0.84rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .inline-toggle input {
+      width: auto;
+      margin: 0;
+      padding: 0;
+      accent-color: var(--accent);
+    }
+    .telework-locations-box {
+      margin-top: 0.65rem;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 0.7rem 0.8rem;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .telework-locations-note {
+      margin: 0 0 0.55rem 0;
+      color: var(--ink-soft);
+      font-size: 0.84rem;
+    }
     .employee-row {
       padding: 0.8rem; border: 1px solid var(--line);
       margin-bottom: 0.5rem; border-radius: 10px;
@@ -340,6 +382,7 @@ $user = get_auth_user();
       <button class="tab-btn" data-tab="departments">🏷️ Départements</button>
       <button class="tab-btn" data-tab="absences">📋 Absences</button>
       <button class="tab-btn" data-tab="hours">⏰ Horaires</button>
+      <button class="tab-btn" data-tab="payroll">💼 Paie & cloture</button>
       <button class="tab-btn" data-tab="vacation-requests">🏖️ Congés</button>
       <button class="tab-btn" data-tab="device-settings">📟 Pointeuse</button>
     </div>
@@ -378,28 +421,26 @@ $user = get_auth_user();
         </div>
         <div class="form-grid-auto" style="margin-top: 0.5rem;">
           <div class="form-group" style="margin: 0; grid-column: span 2;">
-            <label for="emp-address">Adresse</label>
+            <div class="field-head-inline">
+              <label for="emp-address">Adresse</label>
+              <label class="inline-toggle">
+                <input id="emp-telework-enabled" type="checkbox" />
+                Teletravail autorise
+              </label>
+            </div>
             <input id="emp-address" type="text" placeholder="Ex: 12 rue de la Paix, Paris" style="width:100%;" />
             <input id="emp-lat" type="hidden" />
             <input id="emp-lng" type="hidden" />
+            <div id="emp-allowed-locations-wrap" class="telework-locations-box" style="display:none;">
+              <p class="telework-locations-note">Ajoutez ici les adresses autorisees en plus de l'adresse principale.</p>
+              <label style="margin-bottom:0.35rem;">Adresses autorisees</label>
+              <div id="emp-allowed-locations-list" style="display:grid; gap:0.5rem;"></div>
+              <button type="button" id="btn-add-allowed-location" class="btn-edit" style="margin-top:0.6rem;">+ Ajouter une adresse autorisee</button>
+            </div>
           </div>
           <div class="form-group" style="margin: 0;">
             <label for="emp-vacation-days">Jours de conges/an</label>
             <input id="emp-vacation-days" type="number" min="0" max="60" value="25" />
-          </div>
-          <div class="form-group" style="margin: 0; grid-column: span 2; border:1px solid var(--line); border-radius:10px; padding:0.75rem 0.8rem; background: var(--surface-2);">
-            <label style="display:flex; align-items:center; gap:0.45rem; font-weight:600; margin:0;">
-              <input id="emp-telework-enabled" type="checkbox" />
-              Autoriser le teletravail
-            </label>
-            <small style="color: var(--ink-soft); display:block; margin-top:0.3rem;">
-              Ajoutez ici les adresses autorisees en plus de l'adresse principale.
-            </small>
-            <div id="emp-allowed-locations-wrap" style="margin-top:0.65rem; display:none;">
-              <label style="margin-bottom:0.35rem;">Adresses autorisees (autres que l'adresse principale)</label>
-              <div id="emp-allowed-locations-list" style="display:grid; gap:0.5rem;"></div>
-              <button type="button" id="btn-add-allowed-location" class="btn-edit" style="margin-top:0.6rem;">+ Ajouter une adresse autorisee</button>
-            </div>
           </div>
         </div>
         <button type="submit" class="btn-in" style="margin-top: 1rem;">Enregistrer</button>
@@ -609,6 +650,51 @@ $user = get_auth_user();
       </div>
     </div>
 
+    <div id="payroll" class="tab-content panel">
+      <h2>Paie, heures et cloture</h2>
+      <p style="color: var(--ink-soft); margin-top: 0;">Exporte la paie, consulte la banque d'heures et verrouille les periodes finalisees.</p>
+
+      <div class="admin-top-grid">
+        <div class="form-group">
+          <label for="payroll-period">Periode</label>
+          <input id="payroll-period" type="month" />
+        </div>
+        <div class="form-group">
+          <label for="payroll-department">Departement</label>
+          <select id="payroll-department">
+            <option value="">Tous les departements</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="payroll-employee">Collaborateur</label>
+          <select id="payroll-employee">
+            <option value="">Tous les collaborateurs</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin: 0.8rem 0 1rem;">
+        <button type="button" id="btn-payroll-export" class="btn-edit">⬇️ Export CSV paie</button>
+        <button type="button" id="btn-payroll-close" class="btn-delete">🔒 Cloturer la periode</button>
+        <button type="button" id="btn-payroll-reopen" class="btn-access">🔓 Reouvrir la periode</button>
+        <button type="button" id="btn-payroll-refresh" class="btn-in">↺ Actualiser</button>
+      </div>
+
+      <div id="payroll-overtime-summary" class="hours-balance-summary"></div>
+      <div id="payroll-overtime-table"></div>
+
+      <div class="admin-two-col-grid" style="margin-top: 1.4rem; align-items:start;">
+        <div>
+          <h3 style="margin-top:0;">Periodes cloturees</h3>
+          <div id="payroll-closures-list" class="hours-empty">Chargement...</div>
+        </div>
+        <div>
+          <h3 style="margin-top:0;">Journal d'audit recent</h3>
+          <div id="payroll-audit-list" class="hours-empty">Chargement...</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Onglet Demandes de congés -->
     <div id="vacation-requests" class="tab-content panel">
       <h2>Demandes de congés</h2>
@@ -757,6 +843,17 @@ $user = get_auth_user();
       btnPrintHours: document.getElementById('btn-print-hours'),
       hoursBalanceSummary: document.getElementById('hours-balance-summary'),
       hoursVisualContainer: document.getElementById('hours-visual-container'),
+      payrollPeriod: document.getElementById('payroll-period'),
+      payrollDepartment: document.getElementById('payroll-department'),
+      payrollEmployee: document.getElementById('payroll-employee'),
+      btnPayrollExport: document.getElementById('btn-payroll-export'),
+      btnPayrollClose: document.getElementById('btn-payroll-close'),
+      btnPayrollReopen: document.getElementById('btn-payroll-reopen'),
+      btnPayrollRefresh: document.getElementById('btn-payroll-refresh'),
+      payrollOvertimeSummary: document.getElementById('payroll-overtime-summary'),
+      payrollOvertimeTable: document.getElementById('payroll-overtime-table'),
+      payrollClosuresList: document.getElementById('payroll-closures-list'),
+      payrollAuditList: document.getElementById('payroll-audit-list'),
       vacStatusFilter: document.getElementById('vac-status-filter'),
       vacRequestsList: document.getElementById('vac-requests-list'),
       deviceSettingsForm: document.getElementById('device-settings-form'),
@@ -904,13 +1001,45 @@ $user = get_auth_user();
       }
     }
 
+    function renderPayrollDepartmentOptions(preferredValue = '') {
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.payrollDepartment.value || '');
+
+      els.payrollDepartment.innerHTML = [
+        '<option value="">Tous les departements</option>',
+        ...departmentsCache.map(d => `<option value="${d.id}">${d.name}</option>`),
+      ].join('');
+
+      if (wanted && departmentsCache.some(d => String(d.id) === wanted)) {
+        els.payrollDepartment.value = wanted;
+      }
+    }
+
+    function renderPayrollEmployeeOptions(preferredValue = '') {
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.payrollEmployee.value || '');
+
+      els.payrollEmployee.innerHTML = [
+        '<option value="">Tous les collaborateurs</option>',
+        ...empCache.map(e => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`),
+      ].join('');
+
+      if (wanted && empCache.some(e => String(e.id) === wanted)) {
+        els.payrollEmployee.value = wanted;
+      }
+    }
+
     async function loadDepartments(preferredValue = '') {
       try {
         const prevHoursViewDepartment = els.hoursViewDepartment.value;
+        const prevPayrollDepartment = els.payrollDepartment.value;
         const data = await api('api/departments.php?action=list');
         departmentsCache = Array.isArray(data.departments) ? data.departments : [];
         renderDepartmentOptions(preferredValue);
         renderHoursViewDepartmentOptions(prevHoursViewDepartment);
+        renderPayrollDepartmentOptions(prevPayrollDepartment);
 
         els.departmentsList.innerHTML = departmentsCache.length
           ? departmentsCache.map(d => `
@@ -931,6 +1060,7 @@ $user = get_auth_user();
         const prevAbsValue = els.absEmployee.value;
         const prevHoursValue = els.hoursEmployee.value;
         const prevHoursViewEmployee = els.hoursViewEmployee.value;
+        const prevPayrollEmployee = els.payrollEmployee.value;
         const currentEditId = els.empId.value;
 
         const data = await api('api/employees.php?action=list');
@@ -962,6 +1092,7 @@ $user = get_auth_user();
         els.absEmployee.innerHTML = optionsHtml;
         els.hoursEmployee.innerHTML = optionsHtml;
         renderHoursViewEmployeeOptions(prevHoursViewEmployee);
+        renderPayrollEmployeeOptions(prevPayrollEmployee);
 
         const existingIds = new Set(data.employees.map(e => String(e.id)));
         const preferredId = currentEditId || prevHoursValue;
@@ -985,6 +1116,7 @@ $user = get_auth_user();
 
         loadHoursForSelected();
         loadHoursVisual();
+        loadPayrollDashboard();
       } catch (e) { showToast(e.message, true); }
     }
 
@@ -1548,6 +1680,115 @@ $user = get_auth_user();
       }
     }
 
+    function ensurePayrollPeriodDefault() {
+      if (!els.payrollPeriod.value) {
+        els.payrollPeriod.value = new Date().toISOString().slice(0, 7);
+      }
+    }
+
+    function payrollQueryString() {
+      ensurePayrollPeriodDefault();
+      const params = new URLSearchParams({ period: els.payrollPeriod.value });
+      if (els.payrollDepartment.value) params.set('department_id', els.payrollDepartment.value);
+      if (els.payrollEmployee.value) params.set('employee_id', els.payrollEmployee.value);
+      return params.toString();
+    }
+
+    async function loadPayrollDashboard() {
+      if (!els.payrollOvertimeTable) {
+        return;
+      }
+
+      ensurePayrollPeriodDefault();
+      const query = payrollQueryString();
+
+      try {
+        const [overtimeData, closuresData, auditData] = await Promise.all([
+          api('api/overtime.php?' + query),
+          api('api/period_closures.php?months=12'),
+          api('api/audit_logs.php?limit=20'),
+        ]);
+
+        const overtimeRows = overtimeData.rows || [];
+        const totalPeriod = overtimeRows.reduce((acc, row) => acc + Number(row.period_balance || 0), 0);
+        const totalCumulative = overtimeRows.reduce((acc, row) => acc + Number(row.cumulative_balance || 0), 0);
+        const positiveCount = overtimeRows.filter(row => Number(row.period_balance || 0) > 0).length;
+
+        els.payrollOvertimeSummary.innerHTML = `
+          <div class="hours-balance-card">
+            <p>Solde periode</p>
+            <strong>${formatHours(totalPeriod)} h</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Banque d'heures cumulée</p>
+            <strong>${formatHours(totalCumulative)} h</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Collaborateurs en positif</p>
+            <strong>${positiveCount}</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Periode</p>
+            <strong>${escapeHtml(els.payrollPeriod.value)}</strong>
+          </div>
+        `;
+
+        els.payrollOvertimeTable.innerHTML = overtimeRows.length ? `
+          <table class="week-table">
+            <thead>
+              <tr>
+                <th>Collaborateur</th>
+                <th>Departement</th>
+                <th>Prevu</th>
+                <th>Travaille</th>
+                <th>Solde periode</th>
+                <th>Banque cumulée</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${overtimeRows.map(row => `
+                <tr>
+                  <td>${escapeHtml(row.employee_name)}</td>
+                  <td>${escapeHtml(row.department_name || '-')}</td>
+                  <td>${formatHours(row.scheduled_hours)} h</td>
+                  <td>${formatHours(row.worked_hours)} h</td>
+                  <td class="${Number(row.period_balance) >= 0 ? 'status-ok' : 'status-diff'}">${Number(row.period_balance) >= 0 ? '+' : ''}${formatHours(row.period_balance)} h</td>
+                  <td class="${Number(row.cumulative_balance) >= 0 ? 'status-ok' : 'status-diff'}">${Number(row.cumulative_balance) >= 0 ? '+' : ''}${formatHours(row.cumulative_balance)} h</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : '<div class="hours-empty">Aucune donnée sur cette période.</div>';
+
+        const closures = closuresData.periods || [];
+        els.payrollClosuresList.innerHTML = closures.length ? closures.map(period => `
+          <div class="hours-day-item" style="margin-bottom:0.45rem;">
+            <div class="hours-day-head">
+              <strong>${escapeHtml(period.period_key)}</strong>
+              <span>${period.closed ? '🔒 Cloturee' : '🟢 Ouverte'}</span>
+            </div>
+            <span style="display:block; color: var(--ink-soft); font-size:0.8rem;">${period.closed ? `par ${escapeHtml(period.closed_by || '')} le ${escapeHtml(String(period.closed_at || '').slice(0, 16))}` : 'Periode editable'}</span>
+          </div>
+        `).join('') : '<div class="hours-empty">Aucune periode suivie.</div>';
+
+        const logs = auditData.logs || [];
+        els.payrollAuditList.innerHTML = logs.length ? logs.map(log => `
+          <div class="hours-day-item" style="margin-bottom:0.45rem;">
+            <div class="hours-day-head">
+              <strong>${escapeHtml(log.summary || log.action_type)}</strong>
+              <span>${escapeHtml(String(log.created_at || '').slice(0, 16))}</span>
+            </div>
+            <span style="display:block; color: var(--ink-soft); font-size:0.8rem;">${escapeHtml(log.actor_username || 'system')} · ${escapeHtml(log.target_type || '')} #${escapeHtml(log.target_id || '')}</span>
+          </div>
+        `).join('') : '<div class="hours-empty">Aucune trace recente.</div>';
+      } catch (e) {
+        els.payrollOvertimeSummary.innerHTML = '';
+        els.payrollOvertimeTable.innerHTML = `<div class="hours-empty">Erreur de chargement: ${escapeHtml(e.message)}</div>`;
+        els.payrollClosuresList.innerHTML = '<div class="hours-empty">Impossible de charger les clotures.</div>';
+        els.payrollAuditList.innerHTML = '<div class="hours-empty">Impossible de charger l\'audit.</div>';
+      }
+    }
+
     function updateRecurrenceSlotOptions(intervalValue, selectedSlotValue = 1) {
       const interval = Math.max(1, Math.min(3, Number(intervalValue) || 1));
       const selected = Math.max(1, Math.min(interval, Number(selectedSlotValue) || 1));
@@ -1682,6 +1923,42 @@ $user = get_auth_user();
       }
     });
 
+    els.payrollPeriod.addEventListener('change', loadPayrollDashboard);
+    els.payrollDepartment.addEventListener('change', loadPayrollDashboard);
+    els.payrollEmployee.addEventListener('change', loadPayrollDashboard);
+    els.btnPayrollRefresh.addEventListener('click', loadPayrollDashboard);
+    els.btnPayrollExport.addEventListener('click', () => {
+      window.location.href = 'api/payroll_export.php?' + payrollQueryString();
+    });
+    els.btnPayrollClose.addEventListener('click', async () => {
+      ensurePayrollPeriodDefault();
+      if (!confirm(`Cloturer la periode ${els.payrollPeriod.value} ? Les corrections y seront bloquees.`)) return;
+      try {
+        await api('api/period_closures.php', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'close', period_key: els.payrollPeriod.value }),
+        });
+        showToast('Periode cloturee');
+        await loadPayrollDashboard();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    });
+    els.btnPayrollReopen.addEventListener('click', async () => {
+      ensurePayrollPeriodDefault();
+      if (!confirm(`Reouvrir la periode ${els.payrollPeriod.value} ?`)) return;
+      try {
+        await api('api/period_closures.php', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'reopen', period_key: els.payrollPeriod.value }),
+        });
+        showToast('Periode rouverte');
+        await loadPayrollDashboard();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    });
+
     els.btnSaveHours.addEventListener('click', async () => {
       const empId = els.hoursEmployee.value;
       if (!empId) {
@@ -1780,6 +2057,7 @@ $user = get_auth_user();
 
     ensureWeekDefault();
     ensureHoursViewWeekDefault();
+    ensurePayrollPeriodDefault();
     updateRecurrenceSlotOptions(1, 1);
     updateHoursModeVisibility();
     updateHoursViewVisibility();

@@ -24,6 +24,7 @@ function get_pdo(): PDO
     ensure_department_schema($pdo);
     ensure_device_settings_schema($pdo);
     ensure_telework_schema($pdo);
+    ensure_payroll_schema($pdo);
 
     return $pdo;
 }
@@ -158,6 +159,35 @@ function ensure_telework_schema(PDO $pdo): void
             CONSTRAINT fk_allowed_locations_employee
                 FOREIGN KEY (employee_id) REFERENCES employees(id)
                 ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+}
+
+function ensure_payroll_schema(PDO $pdo): void
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS payroll_closures (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            period_key CHAR(7) NOT NULL UNIQUE,
+            closed_by VARCHAR(100) NOT NULL DEFAULT 'system',
+            closed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS audit_logs (
+            id BIGINT PRIMARY KEY AUTO_INCREMENT,
+            actor_username VARCHAR(100) NOT NULL DEFAULT 'system',
+            actor_role VARCHAR(40) NOT NULL DEFAULT 'system',
+            action_type VARCHAR(80) NOT NULL,
+            target_type VARCHAR(80) NOT NULL,
+            target_id VARCHAR(80) NOT NULL DEFAULT '',
+            summary VARCHAR(255) NOT NULL DEFAULT '',
+            details_json LONGTEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_audit_created_at (created_at),
+            INDEX idx_audit_target (target_type, target_id),
+            INDEX idx_audit_action (action_type)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 }
@@ -314,6 +344,8 @@ function infer_next_event(PDO $pdo, int $employee_id): string
 
 function insert_event(PDO $pdo, int $employee_id, string $event_type, string $source): array
 {
+    assert_period_open($pdo, date('Y-m-d'), 'Cette periode est cloturee: aucun nouveau pointage ne peut etre ajoute.');
+
     $lastEvent = get_last_event($pdo, $employee_id);
     $secondsSinceLast = $lastEvent ? get_seconds_since_timestamp((string) ($lastEvent['timestamp'] ?? '')) : null;
 
@@ -367,6 +399,52 @@ function haversine_distance(float $lat1, float $lon1, float $lat2, float $lon2):
     $dlam = deg2rad($lon2 - $lon1);
     $a    = sin($dphi / 2) ** 2 + cos($phi1) * cos($phi2) * sin($dlam / 2) ** 2;
     return $R * 2 * atan2(sqrt($a), sqrt(1 - $a));
+}
+
+function period_key_for_date(string $dateIso): string
+{
+    $raw = trim($dateIso);
+    if ($raw === '') {
+        return date('Y-m');
+    }
+
+    $ts = strtotime($raw);
+    if ($ts === false) {
+        return date('Y-m');
+    }
+
+    return date('Y-m', $ts);
+}
+
+function is_period_closed(PDO $pdo, string $dateIso): bool
+{
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM payroll_closures WHERE period_key = ?');
+    $stmt->execute([period_key_for_date($dateIso)]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function assert_period_open(PDO $pdo, string $dateIso, string $message = 'Cette periode est cloturee.'): void
+{
+    if (is_period_closed($pdo, $dateIso)) {
+        throw new RuntimeException($message);
+    }
+}
+
+function log_audit_event(PDO $pdo, array $actor, string $actionType, string $targetType, string $targetId, string $summary, array $details = []): void
+{
+    $stmt = $pdo->prepare(
+        'INSERT INTO audit_logs (actor_username, actor_role, action_type, target_type, target_id, summary, details_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+    $stmt->execute([
+        trim((string) ($actor['username'] ?? 'system')) ?: 'system',
+        trim((string) ($actor['role'] ?? 'system')) ?: 'system',
+        $actionType,
+        $targetType,
+        $targetId,
+        $summary,
+        $details ? json_encode($details, JSON_UNESCAPED_UNICODE) : null,
+    ]);
 }
 
 function json_response(mixed $data, int $status = 200): void
