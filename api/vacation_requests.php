@@ -114,7 +114,7 @@ try {
 
     // === REVIEW: Valider ou rejeter une demande (admin seulement) ===
     if ($action === 'review') {
-        if ($auth['role'] !== 'admin') {
+        if (!in_array(($auth['role'] ?? ''), ['admin', 'hr'], true)) {
             json_response(['error' => 'Seul l\'admin peut valider les demandes.'], 403);
             exit;
         }

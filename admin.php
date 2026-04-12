@@ -19,7 +19,8 @@ $user = get_auth_user();
       margin-bottom: 1.5rem;
       width: 100%;
     }
-    .admin-nav .tab-btn {
+    .admin-nav .tab-btn,
+    .admin-nav .nav-link-btn {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -41,7 +42,8 @@ $user = get_auth_user();
       width: 100%;
       transition: border-color 0.2s, color 0.2s, background 0.2s;
     }
-    .admin-nav .tab-btn:hover {
+    .admin-nav .tab-btn:hover,
+    .admin-nav .nav-link-btn:hover {
       transform: none !important;
       filter: none;
       border-color: var(--accent);
@@ -51,6 +53,9 @@ $user = get_auth_user();
       background: var(--accent);
       color: #fff;
       border-color: var(--accent);
+    }
+    .admin-nav .nav-link-btn {
+      text-decoration: none;
     }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
@@ -364,8 +369,7 @@ $user = get_auth_user();
         <a href="dashboard.php">📊 Tableau de bord</a>
         <a href="reporting.php">📈 Reporting</a>
         <a href="admin.php">🔧 Admin</a>
-          <a href="corrections.php">✏️ Corrections</a>
-          <span class="app-nav-user">👤 <strong><?= htmlspecialchars($user['username']) ?></strong></span>
+        <span class="app-nav-user">👤 <strong><?= htmlspecialchars($user['username']) ?></strong></span>
         <a href="logout.php">🚪 Logout</a>
       </div>
     </div>
@@ -379,6 +383,7 @@ $user = get_auth_user();
 
     <div class="admin-nav">
       <button class="tab-btn active" data-tab="employees">👥 Collaborateurs</button>
+      <a class="nav-link-btn" href="corrections.php">✏️ Corrections</a>
       <button class="tab-btn" data-tab="departments">🏷️ Départements</button>
       <button class="tab-btn" data-tab="absences">📋 Absences</button>
       <button class="tab-btn" data-tab="hours">⏰ Horaires</button>
@@ -704,6 +709,18 @@ $user = get_auth_user();
       <style>
         .vac-filter { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
         .vac-filter select { padding: 0.6rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+        .vac-balance-panel {
+          padding: 1rem;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          margin-bottom: 1.2rem;
+          background: var(--surface-2);
+        }
+        .vac-balance-note {
+          margin: 0 0 0.9rem;
+          color: var(--ink-soft);
+          font-size: 0.9rem;
+        }
         .vac-request-item {
           padding: 1rem;
           border: 1px solid var(--line);
@@ -731,12 +748,33 @@ $user = get_auth_user();
         }
       </style>
       <div class="vac-filter">
+        <select id="vac-selected-employee">
+          <option value="">Choisir un collaborateur</option>
+        </select>
+        <select id="vac-employee-filter">
+          <option value="">Tous les collaborateurs</option>
+        </select>
         <select id="vac-status-filter">
           <option value="">Tous les statuts</option>
           <option value="pending">En attente</option>
           <option value="approved">Approuvé</option>
           <option value="rejected">Rejeté</option>
         </select>
+      </div>
+      <div class="vac-balance-panel">
+        <p class="vac-balance-note">Le collaborateur sélectionné ci-dessus sert à consulter le solde de congés, le cumul d'heures supplémentaires et à appliquer un ajustement manuel si nécessaire.</p>
+        <div id="vac-balance-summary" class="hours-balance-summary"></div>
+        <div class="admin-two-col-grid" style="margin-top: 1rem;">
+          <div class="form-group" style="margin: 0;">
+            <label for="vac-adjustment-days">Ajustement congés (jours)</label>
+            <input id="vac-adjustment-days" type="number" step="0.5" value="0" />
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="vac-adjustment-hours">Ajustement heures supp. (heures)</label>
+            <input id="vac-adjustment-hours" type="number" step="0.25" value="0" />
+          </div>
+        </div>
+        <button type="button" id="btn-save-vac-balances" class="btn-in" style="margin-top: 1rem;">Enregistrer les ajustements RH</button>
       </div>
       <div id="vac-requests-list" style="min-height: 200px;">
         <p style="color: var(--ink-soft);">Chargement des demandes...</p>
@@ -857,7 +895,13 @@ $user = get_auth_user();
       payrollOvertimeTable: document.getElementById('payroll-overtime-table'),
       payrollClosuresList: document.getElementById('payroll-closures-list'),
       payrollAuditList: document.getElementById('payroll-audit-list'),
+      vacSelectedEmployee: document.getElementById('vac-selected-employee'),
+      vacEmployeeFilter: document.getElementById('vac-employee-filter'),
       vacStatusFilter: document.getElementById('vac-status-filter'),
+      vacBalanceSummary: document.getElementById('vac-balance-summary'),
+      vacAdjustmentDays: document.getElementById('vac-adjustment-days'),
+      vacAdjustmentHours: document.getElementById('vac-adjustment-hours'),
+      btnSaveVacBalances: document.getElementById('btn-save-vac-balances'),
       vacRequestsList: document.getElementById('vac-requests-list'),
       deviceSettingsForm: document.getElementById('device-settings-form'),
       cfgSiteName: document.getElementById('cfg-site-name'),
@@ -1034,6 +1078,33 @@ $user = get_auth_user();
       }
     }
 
+    function renderVacationEmployeeOptions(selectedValue = '', filterValue = '') {
+      const selectedWanted = selectedValue !== '' && selectedValue !== null && selectedValue !== undefined
+        ? String(selectedValue)
+        : String(els.vacSelectedEmployee.value || '');
+      const filterWanted = filterValue !== '' && filterValue !== null && filterValue !== undefined
+        ? String(filterValue)
+        : String(els.vacEmployeeFilter.value || '');
+
+      const options = empCache.map(e => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
+      els.vacSelectedEmployee.innerHTML = '<option value="">Choisir un collaborateur</option>' + options;
+      els.vacEmployeeFilter.innerHTML = '<option value="">Tous les collaborateurs</option>' + options;
+
+      if (selectedWanted && empCache.some(e => String(e.id) === selectedWanted)) {
+        els.vacSelectedEmployee.value = selectedWanted;
+      } else if (empCache.length) {
+        els.vacSelectedEmployee.value = String(empCache[0].id);
+      } else {
+        els.vacSelectedEmployee.value = '';
+      }
+
+      if (filterWanted && empCache.some(e => String(e.id) === filterWanted)) {
+        els.vacEmployeeFilter.value = filterWanted;
+      } else {
+        els.vacEmployeeFilter.value = '';
+      }
+    }
+
     async function loadDepartments(preferredValue = '') {
       try {
         const prevHoursViewDepartment = els.hoursViewDepartment.value;
@@ -1064,6 +1135,8 @@ $user = get_auth_user();
         const prevHoursValue = els.hoursEmployee.value;
         const prevHoursViewEmployee = els.hoursViewEmployee.value;
         const prevPayrollEmployee = els.payrollEmployee.value;
+        const prevVacationEmployee = els.vacSelectedEmployee.value;
+        const prevVacationFilter = els.vacEmployeeFilter.value;
         const currentEditId = els.empId.value;
 
         const data = await api('api/employees.php?action=list');
@@ -1096,6 +1169,7 @@ $user = get_auth_user();
         els.hoursEmployee.innerHTML = optionsHtml;
         renderHoursViewEmployeeOptions(prevHoursViewEmployee);
         renderPayrollEmployeeOptions(prevPayrollEmployee);
+        renderVacationEmployeeOptions(prevVacationEmployee, prevVacationFilter);
 
         const existingIds = new Set(data.employees.map(e => String(e.id)));
         const preferredId = currentEditId || prevHoursValue;
@@ -1120,6 +1194,8 @@ $user = get_auth_user();
         loadHoursForSelected();
         loadHoursVisual();
         loadPayrollDashboard();
+        loadVacationBalanceSummary();
+        loadVacationRequests();
       } catch (e) { showToast(e.message, true); }
     }
 
@@ -2209,7 +2285,10 @@ $user = get_auth_user();
     async function loadVacationRequests() {
       try {
         const filter = els.vacStatusFilter.value;
-        const url = 'api/vacation_requests.php?action=list' + (filter ? '&status=' + filter : '');
+        const employeeId = els.vacEmployeeFilter.value;
+        const url = 'api/vacation_requests.php?action=list'
+          + (filter ? '&status=' + encodeURIComponent(filter) : '')
+          + (employeeId ? '&emp_id=' + encodeURIComponent(employeeId) : '');
         const data = await api(url);
         const requests = data.requests || [];
 
@@ -2243,6 +2322,55 @@ $user = get_auth_user();
       }
     }
 
+    async function loadVacationBalanceSummary() {
+      const employeeId = els.vacSelectedEmployee.value;
+      if (!employeeId) {
+        els.vacBalanceSummary.innerHTML = '<div class="hours-empty">Sélectionne un collaborateur pour consulter les soldes.</div>';
+        els.vacAdjustmentDays.value = '0';
+        els.vacAdjustmentHours.value = '0';
+        return;
+      }
+
+      try {
+        const data = await api('api/employee_balances.php?employee_id=' + encodeURIComponent(employeeId));
+        const summary = data.summary || {};
+        const vacation = summary.vacation || {};
+        const overtime = summary.overtime || {};
+
+        els.vacAdjustmentDays.value = Number(vacation.adjustment_days || 0).toFixed(2);
+        els.vacAdjustmentHours.value = Number(overtime.adjustment_hours || 0).toFixed(2);
+
+        els.vacBalanceSummary.innerHTML = `
+          <div class="hours-balance-card">
+            <p>Droits annuels</p>
+            <strong>${Number(vacation.entitled_days || 0).toFixed(2)} j</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Congés approuvés</p>
+            <strong>${Number(vacation.approved_days || 0).toFixed(2)} j</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Demandes en attente</p>
+            <strong>${Number(vacation.pending_days || 0).toFixed(2)} j</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Solde congés</p>
+            <strong>${Number(vacation.balance_days || 0).toFixed(2)} j</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Heures supp. calculées</p>
+            <strong>${Number(overtime.computed_hours || 0).toFixed(2)} h</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Solde heures supp.</p>
+            <strong>${Number(overtime.balance_hours || 0).toFixed(2)} h</strong>
+          </div>
+        `;
+      } catch (e) {
+        els.vacBalanceSummary.innerHTML = '<div class="hours-empty">' + e.message + '</div>';
+      }
+    }
+
     window.approveRequest = async (requestId) => {
       const comment = prompt('Commentaire (optionnel):');
       if (comment === null) return; // Annulation
@@ -2253,6 +2381,7 @@ $user = get_auth_user();
         });
         showToast('✓ Demande approuvée');
         loadVacationRequests();
+        loadVacationBalanceSummary();
       } catch (e) {
         showToast(e.message, true);
       }
@@ -2268,12 +2397,52 @@ $user = get_auth_user();
         });
         showToast('✗ Demande rejetée');
         loadVacationRequests();
+        loadVacationBalanceSummary();
       } catch (e) {
         showToast(e.message, true);
       }
     };
 
+    els.vacSelectedEmployee.addEventListener('change', () => {
+      if (els.vacSelectedEmployee.value) {
+        els.vacEmployeeFilter.value = els.vacSelectedEmployee.value;
+      }
+      loadVacationBalanceSummary();
+      loadVacationRequests();
+    });
+
+    els.vacEmployeeFilter.addEventListener('change', () => {
+      if (els.vacEmployeeFilter.value) {
+        els.vacSelectedEmployee.value = els.vacEmployeeFilter.value;
+        loadVacationBalanceSummary();
+      }
+      loadVacationRequests();
+    });
+
     els.vacStatusFilter.addEventListener('change', loadVacationRequests);
+
+    els.btnSaveVacBalances.addEventListener('click', async () => {
+      const employeeId = els.vacSelectedEmployee.value;
+      if (!employeeId) {
+        showToast('Choisis un collaborateur.', true);
+        return;
+      }
+
+      try {
+        await api('api/employee_balances.php', {
+          method: 'POST',
+          body: JSON.stringify({
+            employee_id: Number(employeeId),
+            vacation_adjustment_days: parseFloat(els.vacAdjustmentDays.value || '0') || 0,
+            overtime_adjustment_hours: parseFloat(els.vacAdjustmentHours.value || '0') || 0,
+          }),
+        });
+        showToast('Soldes RH mis à jour');
+        loadVacationBalanceSummary();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    });
 
     // Configuration boitier RFID
     async function loadDeviceSettings() {
@@ -2313,6 +2482,7 @@ $user = get_auth_user();
     loadEmployees();
     loadAbsences();
     loadVacationRequests();
+    loadVacationBalanceSummary();
     loadDeviceSettings();
   </script>
 </body>

@@ -92,6 +92,12 @@ try {
     if (!$column_exists('employees', 'vacation_days')) {
         $pdo->exec("ALTER TABLE employees ADD COLUMN vacation_days INT NOT NULL DEFAULT 25");
     }
+    if (!$column_exists('employees', 'vacation_adjustment_days')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN vacation_adjustment_days DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER vacation_days");
+    }
+    if (!$column_exists('employees', 'overtime_adjustment_hours')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN overtime_adjustment_hours DECIMAL(8,2) NOT NULL DEFAULT 0 AFTER vacation_adjustment_days");
+    }
     $output[] = '✅ Colonnes employes geo + conges OK.';
 
     $pdo->exec(

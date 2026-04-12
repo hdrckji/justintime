@@ -165,6 +165,16 @@ function ensure_telework_schema(PDO $pdo): void
 
 function ensure_payroll_schema(PDO $pdo): void
 {
+    if (jit_table_exists($pdo, 'employees')) {
+        if (!jit_column_exists($pdo, 'employees', 'vacation_adjustment_days')) {
+            $pdo->exec("ALTER TABLE employees ADD COLUMN vacation_adjustment_days DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER vacation_days");
+        }
+
+        if (!jit_column_exists($pdo, 'employees', 'overtime_adjustment_hours')) {
+            $pdo->exec("ALTER TABLE employees ADD COLUMN overtime_adjustment_hours DECIMAL(8,2) NOT NULL DEFAULT 0 AFTER vacation_adjustment_days");
+        }
+    }
+
     if (jit_table_exists($pdo, 'absences')) {
         if (!jit_column_exists($pdo, 'absences', 'payroll_code')) {
             $pdo->exec("ALTER TABLE absences ADD COLUMN payroll_code VARCHAR(40) NOT NULL DEFAULT '' AFTER type");
