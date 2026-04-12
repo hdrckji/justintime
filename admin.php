@@ -13,11 +13,9 @@ $user = get_auth_user();
   <style>
     .admin-nav {
       grid-column: span 12;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: stretch;
-      column-gap: 0.5rem;
-      row-gap: 0.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 0.5rem;
       margin-bottom: 1.5rem;
       width: 100%;
     }
@@ -40,8 +38,7 @@ $user = get_auth_user();
       background: var(--surface-2);
       color: var(--ink-soft);
       transform: none;
-      flex: 1 1 calc(25% - 0.5rem);
-      max-width: calc(25% - 0.5rem);
+      width: 100%;
       transition: border-color 0.2s, color 0.2s, background 0.2s;
     }
     .admin-nav .tab-btn:hover {
@@ -119,21 +116,29 @@ $user = get_auth_user();
       color: var(--ink-soft);
       font-size: 0.92rem;
     }
+    .admin-two-col-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .admin-top-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
     @media (max-width: 920px) {
-      .admin-nav .tab-btn {
-        flex: 1 1 calc(50% - 0.5rem);
-        max-width: calc(50% - 0.5rem);
-      }
       .department-layout {
         grid-template-columns: 1fr;
       }
     }
     @media (max-width: 560px) {
-      .admin-nav { gap: 0.35rem; }
+      .admin-nav {
+        gap: 0.35rem;
+        grid-template-columns: 1fr;
+      }
       .admin-nav .tab-btn {
         min-height: 42px; height: 42px;
         padding: 0.55rem 0.7rem; font-size: 0.8rem;
-        flex: 1 1 100%; max-width: 100%;
       }
       .employee-row { flex-direction: column; align-items: flex-start; }
       .employee-row button { margin-left: 0; width: 100%; }
@@ -280,7 +285,7 @@ $user = get_auth_user();
     <div id="absences" class="tab-content panel">
       <h2>Gestion des absences</h2>
       <form id="absence-form" class="form-group">
-        <div style="display: grid; gap: 1rem; grid-template-columns: 1fr 1fr;">
+        <div class="admin-two-col-grid">
           <div class="form-group">
             <label for="abs-employee">Collaborateur</label>
             <select id="abs-employee" required></select>
@@ -316,7 +321,7 @@ $user = get_auth_user();
     <!-- Onglet Horaires -->
     <div id="hours" class="tab-content panel">
       <h2>Horaires prevus par collaborateur</h2>
-      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+      <div class="admin-top-grid">
         <div class="form-group">
           <label for="hours-employee">Collaborateur</label>
           <select id="hours-employee"></select>
@@ -334,7 +339,7 @@ $user = get_auth_user();
         </div>
       </div>
 
-      <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-top: 0.5rem;">
+      <div class="admin-top-grid" style="margin-top: 0.5rem;">
         <div class="form-group">
           <label for="hours-mode">Mode d'encodage</label>
           <select id="hours-mode">
