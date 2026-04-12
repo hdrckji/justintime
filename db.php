@@ -22,6 +22,7 @@ function get_pdo(): PDO
     ]);
 
     ensure_department_schema($pdo);
+    ensure_device_settings_schema($pdo);
 
     return $pdo;
 }
@@ -120,6 +121,94 @@ function ensure_department_schema(PDO $pdo): void
         } catch (Throwable $e) {
             // Ignorer si la contrainte existe deja sous un autre nom.
         }
+    }
+}
+
+function ensure_device_settings_schema(PDO $pdo): void
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS device_settings (
+            config_key   VARCHAR(80) PRIMARY KEY,
+            config_value TEXT NOT NULL,
+            updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+}
+
+function get_device_settings(PDO $pdo): array
+{
+    $defaults = [
+        'site_name' => 'JustInTime',
+        'display_message' => 'Passe un badge',
+        'success_message' => 'Pointage enregistre',
+        'cooldown_ms' => 2000,
+        'clock_refresh_ms' => 1000,
+        'config_refresh_ms' => 300000,
+        'led_enabled' => true,
+        'buzzer_enabled' => true,
+    ];
+
+    $rows = $pdo->query('SELECT config_key, config_value FROM device_settings')->fetchAll();
+    if (!$rows) {
+        return $defaults;
+    }
+
+    $settings = $defaults;
+
+    foreach ($rows as $row) {
+        $key = (string) ($row['config_key'] ?? '');
+        $value = (string) ($row['config_value'] ?? '');
+
+        if (!array_key_exists($key, $settings)) {
+            continue;
+        }
+
+        switch ($key) {
+            case 'cooldown_ms':
+            case 'clock_refresh_ms':
+            case 'config_refresh_ms':
+                $settings[$key] = (int) $value;
+                break;
+            case 'led_enabled':
+            case 'buzzer_enabled':
+                $settings[$key] = in_array(strtolower($value), ['1', 'true', 'yes', 'on'], true);
+                break;
+            default:
+                $settings[$key] = $value;
+                break;
+        }
+    }
+
+    // Garde-fous de plage pour eviter une config invalide cote firmware.
+    $settings['cooldown_ms'] = max(500, min(15000, (int) $settings['cooldown_ms']));
+    $settings['clock_refresh_ms'] = max(250, min(10000, (int) $settings['clock_refresh_ms']));
+    $settings['config_refresh_ms'] = max(10000, (int) $settings['config_refresh_ms']);
+
+    return $settings;
+}
+
+function save_device_settings(PDO $pdo, array $settings): void
+{
+    if (!$settings) {
+        return;
+    }
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO device_settings (config_key, config_value)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value), updated_at = CURRENT_TIMESTAMP'
+    );
+
+    foreach ($settings as $key => $value) {
+        if (is_bool($value)) {
+            $value = $value ? '1' : '0';
+        } elseif (is_int($value) || is_float($value)) {
+            $value = (string) $value;
+        } else {
+            $value = trim((string) $value);
+        }
+
+        $stmt->execute([(string) $key, $value]);
     }
 }
 

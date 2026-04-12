@@ -105,6 +105,20 @@ $user = get_auth_user();
       font-size: 0.78rem;
       font-weight: 700;
     }
+    .device-settings-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .device-settings-note {
+      margin-top: 0.8rem;
+      padding: 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+    }
     @media (max-width: 920px) {
       .admin-nav .tab-btn {
         flex: 1 1 calc(50% - 0.5rem);
@@ -165,6 +179,7 @@ $user = get_auth_user();
       <button class="tab-btn" data-tab="absences">📋 Absences</button>
       <button class="tab-btn" data-tab="hours">⏰ Horaires</button>
       <button class="tab-btn" data-tab="vacation-requests">🏖️ Congés</button>
+      <button class="tab-btn" data-tab="device-settings">📟 Boîtier RFID</button>
     </div>
 
     <!-- Onglet Collaborateurs -->
@@ -429,6 +444,59 @@ $user = get_auth_user();
       </div>
     </div>
 
+    <div id="device-settings" class="tab-content panel">
+      <h2>Configuration du boitier RFID</h2>
+      <p style="color: var(--ink-soft); margin-top: 0;">Ces options sont lues automatiquement par le boitier ESP32.</p>
+
+      <form id="device-settings-form" class="form-group">
+        <div class="device-settings-grid">
+          <div class="form-group" style="margin: 0;">
+            <label for="cfg-site-name">Nom affiche en haut de l'ecran</label>
+            <input id="cfg-site-name" type="text" maxlength="40" required />
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="cfg-display-message">Message d'accueil (ecran attente)</label>
+            <input id="cfg-display-message" type="text" maxlength="60" required />
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="cfg-success-message">Message apres badge reconnu</label>
+            <input id="cfg-success-message" type="text" maxlength="60" required />
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="cfg-led-enabled">LED actives</label>
+            <select id="cfg-led-enabled">
+              <option value="1">Oui</option>
+              <option value="0">Non</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="cfg-buzzer-enabled">Buzzer actif</label>
+            <select id="cfg-buzzer-enabled">
+              <option value="1">Oui</option>
+              <option value="0">Non</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="cfg-cooldown-ms">Cooldown badge (ms)</label>
+            <input id="cfg-cooldown-ms" type="number" min="500" max="15000" step="100" required />
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="cfg-clock-refresh-ms">Rafraichissement horloge (ms)</label>
+            <input id="cfg-clock-refresh-ms" type="number" min="250" max="10000" step="50" required />
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="cfg-config-refresh-ms">Rafraichissement config (ms)</label>
+            <input id="cfg-config-refresh-ms" type="number" min="10000" max="3600000" step="1000" required />
+          </div>
+        </div>
+        <button type="submit" class="btn-in" style="margin-top: 1rem;">Enregistrer la configuration boitier</button>
+      </form>
+
+      <div class="device-settings-note">
+        Astuce: pour des badges en chaine, garde un cooldown court (1000-2000 ms). En environnement calme, tu peux augmenter pour eviter les doubles scans.
+      </div>
+    </div>
+
     <section id="toast" class="toast" role="status" aria-live="polite"></section>
   </main>
 
@@ -473,6 +541,15 @@ $user = get_auth_user();
       btnSaveHours: document.getElementById('btn-save-hours'),
       vacStatusFilter: document.getElementById('vac-status-filter'),
       vacRequestsList: document.getElementById('vac-requests-list'),
+      deviceSettingsForm: document.getElementById('device-settings-form'),
+      cfgSiteName: document.getElementById('cfg-site-name'),
+      cfgDisplayMessage: document.getElementById('cfg-display-message'),
+      cfgSuccessMessage: document.getElementById('cfg-success-message'),
+      cfgLedEnabled: document.getElementById('cfg-led-enabled'),
+      cfgBuzzerEnabled: document.getElementById('cfg-buzzer-enabled'),
+      cfgCooldownMs: document.getElementById('cfg-cooldown-ms'),
+      cfgClockRefreshMs: document.getElementById('cfg-clock-refresh-ms'),
+      cfgConfigRefreshMs: document.getElementById('cfg-config-refresh-ms'),
       toast: document.getElementById('toast'),
     };
 
@@ -1067,10 +1144,51 @@ $user = get_auth_user();
 
     els.vacStatusFilter.addEventListener('change', loadVacationRequests);
 
+    // Configuration boitier RFID
+    async function loadDeviceSettings() {
+      try {
+        const data = await api('api/device_settings.php');
+        const s = data.settings || {};
+        els.cfgSiteName.value = s.site_name || 'JustInTime';
+        els.cfgDisplayMessage.value = s.display_message || 'Passe un badge';
+        els.cfgSuccessMessage.value = s.success_message || 'Pointage enregistre';
+        els.cfgLedEnabled.value = s.led_enabled ? '1' : '0';
+        els.cfgBuzzerEnabled.value = s.buzzer_enabled ? '1' : '0';
+        els.cfgCooldownMs.value = Number(s.cooldown_ms || 2000);
+        els.cfgClockRefreshMs.value = Number(s.clock_refresh_ms || 1000);
+        els.cfgConfigRefreshMs.value = Number(s.config_refresh_ms || 300000);
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    els.deviceSettingsForm.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try {
+        await api('api/device_settings.php', {
+          method: 'POST',
+          body: JSON.stringify({
+            site_name: els.cfgSiteName.value.trim(),
+            display_message: els.cfgDisplayMessage.value.trim(),
+            success_message: els.cfgSuccessMessage.value.trim(),
+            led_enabled: els.cfgLedEnabled.value === '1',
+            buzzer_enabled: els.cfgBuzzerEnabled.value === '1',
+            cooldown_ms: Number(els.cfgCooldownMs.value),
+            clock_refresh_ms: Number(els.cfgClockRefreshMs.value),
+            config_refresh_ms: Number(els.cfgConfigRefreshMs.value),
+          }),
+        });
+        showToast('Configuration boitier enregistree');
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    });
+
     loadDepartments();
     loadEmployees();
     loadAbsences();
     loadVacationRequests();
+    loadDeviceSettings();
   </script>
 </body>
 </html>

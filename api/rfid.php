@@ -12,17 +12,23 @@ if ($method === 'GET') {
         exit;
     }
 
+    $pdo = get_pdo();
+    $settings = get_device_settings($pdo);
+
     json_response([
         'status' => 'ok',
-        'site_name' => 'JustInTime',
+        'site_name' => $settings['site_name'],
         'device_id' => $device_id !== '' ? $device_id : 'ESP32-RFID',
         'server_time' => date(DATE_ATOM),
         'timezone' => date_default_timezone_get(),
         'rfid_endpoint' => '/api/attendance/rfid',
-        'cooldown_ms' => 2000,
-        'clock_refresh_ms' => 1000,
-        'config_refresh_ms' => 300000,
-        'display_message' => 'Passe un badge',
+        'cooldown_ms' => $settings['cooldown_ms'],
+        'clock_refresh_ms' => $settings['clock_refresh_ms'],
+        'config_refresh_ms' => $settings['config_refresh_ms'],
+        'display_message' => $settings['display_message'],
+        'success_message' => $settings['success_message'],
+        'led_enabled' => (bool) $settings['led_enabled'],
+        'buzzer_enabled' => (bool) $settings['buzzer_enabled'],
         'message' => 'Configuration RFID OK.',
     ]);
     exit;

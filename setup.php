@@ -142,6 +142,15 @@ try {
     $output[] = '✅ Gestion des departements OK.';
 
     $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS device_settings (
+            config_key   VARCHAR(80) PRIMARY KEY,
+            config_value TEXT NOT NULL,
+            updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    $output[] = '✅ Configuration boitier RFID OK.';
+
+    $pdo->exec(
         "CREATE TABLE IF NOT EXISTS attendance_events (
             id          BIGINT   PRIMARY KEY AUTO_INCREMENT,
             employee_id INT      NOT NULL,
