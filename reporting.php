@@ -13,6 +13,7 @@ $pdo = get_pdo();
 
 $scheduledCols = $pdo->query("SHOW COLUMNS FROM scheduled_hours")->fetchAll(PDO::FETCH_COLUMN);
 $hasWeekStart = in_array('week_start', $scheduledCols, true);
+$hasRecurrence = in_array('recurrence_interval', $scheduledCols, true) && in_array('recurrence_slot', $scheduledCols, true);
 
 $reportView = $_GET['view'] ?? 'employee';
 if (!in_array($reportView, ['employee', 'department'], true)) {
@@ -52,7 +53,7 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
     $dates[$i] = date('Y-m-d', strtotime("+$i day", strtotime($week_start_selected)));
   }
 
-  $loadScheduledForEmployee = static function (PDO $pdo, int $employeeId, bool $hasWeekStart, string $weekStartSelected): array {
+  $loadScheduledForEmployee = static function (PDO $pdo, int $employeeId, bool $hasWeekStart, bool $hasRecurrence, string $weekStartSelected): array {
     if ($employeeId <= 0) {
       return [];
     }
@@ -67,13 +68,38 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
       $rows = $stmt->fetchAll();
 
       if (!$rows) {
-        $stmt = $pdo->prepare(
-          'SELECT day_of_week, hours
-           FROM scheduled_hours
-           WHERE employee_id = ? AND week_start IS NULL'
-        );
-        $stmt->execute([$employeeId]);
-        $rows = $stmt->fetchAll();
+        if ($hasRecurrence) {
+          $stmt = $pdo->prepare(
+            'SELECT day_of_week, hours
+             FROM scheduled_hours
+             WHERE employee_id = ?
+               AND week_start IS NULL
+               AND recurrence_interval >= 1
+               AND recurrence_slot = (MOD(TIMESTAMPDIFF(WEEK, "2024-01-01", ?), recurrence_interval) + 1)'
+          );
+          $stmt->execute([$employeeId, $weekStartSelected]);
+          $rows = $stmt->fetchAll();
+
+          if (!$rows) {
+            $stmt = $pdo->prepare(
+              'SELECT day_of_week, hours
+               FROM scheduled_hours
+               WHERE employee_id = ?
+                 AND week_start IS NULL
+                 AND recurrence_interval = 1'
+            );
+            $stmt->execute([$employeeId]);
+            $rows = $stmt->fetchAll();
+          }
+        } else {
+          $stmt = $pdo->prepare(
+            'SELECT day_of_week, hours
+             FROM scheduled_hours
+             WHERE employee_id = ? AND week_start IS NULL'
+          );
+          $stmt->execute([$employeeId]);
+          $rows = $stmt->fetchAll();
+        }
       }
     } else {
       $stmt = $pdo->prepare(
@@ -261,7 +287,7 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
           $employee = $stmt->fetch();
           $contextLabel = $employee ? trim($employee['first_name'] . ' ' . $employee['last_name']) : 'Collaborateur';
 
-          $scheduled = $loadScheduledForEmployee($pdo, $selected_emp_id, $hasWeekStart, $week_start_selected);
+          $scheduled = $loadScheduledForEmployee($pdo, $selected_emp_id, $hasWeekStart, $hasRecurrence, $week_start_selected);
           $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, [$selected_emp_id], $week_start_selected, $week_end_selected);
           for ($day = 0; $day < 7; $day++) {
             $isUnavailable = !empty($unavailableByEmployee[$selected_emp_id][$dates[$day]]);
@@ -295,7 +321,7 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
             $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, $employeeIds, $week_start_selected, $week_end_selected);
 
           foreach ($employeeIds as $employeeId) {
-              $employeeSchedule = $loadScheduledForEmployee($pdo, $employeeId, $hasWeekStart, $week_start_selected);
+              $employeeSchedule = $loadScheduledForEmployee($pdo, $employeeId, $hasWeekStart, $hasRecurrence, $week_start_selected);
               for ($day = 0; $day < 7; $day++) {
                 $isUnavailable = !empty($unavailableByEmployee[$employeeId][$dates[$day]]);
                 if ($isUnavailable) {

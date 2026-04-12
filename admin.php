@@ -526,6 +526,20 @@ $user = get_auth_user();
             <label for="ref-end">Heure de fin</label>
             <input id="ref-end" type="time" value="17:00" />
           </div>
+          <div class="form-group" style="margin:0;" id="ref-recurrence-wrap">
+            <label for="ref-recurrence-interval">Recurrence</label>
+            <select id="ref-recurrence-interval">
+              <option value="1">Toutes les semaines</option>
+              <option value="2">Toutes les 2 semaines</option>
+              <option value="3">Toutes les 3 semaines</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0; display:none;" id="ref-recurrence-slot-wrap">
+            <label for="ref-recurrence-slot">Semaine du cycle</label>
+            <select id="ref-recurrence-slot">
+              <option value="1">Semaine 1</option>
+            </select>
+          </div>
         </div>
         <div class="form-group" style="margin-top: 0.8rem;">
           <label>Jours concernes</label>
@@ -734,6 +748,10 @@ $user = get_auth_user();
       hoursWeekly: document.getElementById('hours-weekly'),
       refStart: document.getElementById('ref-start'),
       refEnd: document.getElementById('ref-end'),
+      refRecurrenceWrap: document.getElementById('ref-recurrence-wrap'),
+      refRecurrenceInterval: document.getElementById('ref-recurrence-interval'),
+      refRecurrenceSlotWrap: document.getElementById('ref-recurrence-slot-wrap'),
+      refRecurrenceSlot: document.getElementById('ref-recurrence-slot'),
       weeklyHoursTotal: document.getElementById('weekly-hours-total'),
       hoursGrid: document.getElementById('hours-grid'),
       btnSaveHours: document.getElementById('btn-save-hours'),
@@ -1465,6 +1483,28 @@ $user = get_auth_user();
       }
     }
 
+    function updateRecurrenceSlotOptions(intervalValue, selectedSlotValue = 1) {
+      const interval = Math.max(1, Math.min(3, Number(intervalValue) || 1));
+      const selected = Math.max(1, Math.min(interval, Number(selectedSlotValue) || 1));
+      const options = [];
+      for (let slot = 1; slot <= interval; slot++) {
+        options.push(`<option value="${slot}">Semaine ${slot}</option>`);
+      }
+      els.refRecurrenceSlot.innerHTML = options.join('');
+      els.refRecurrenceSlot.value = String(selected);
+    }
+
+    function updateRecurrenceVisibility() {
+      const applyTo = els.hoursApplyTo.value;
+      const mode = els.hoursMode.value;
+      const interval = Math.max(1, Math.min(3, Number(els.refRecurrenceInterval.value) || 1));
+      const showRecurrence = mode === 'reference' && applyTo === 'default';
+      const showSlot = showRecurrence && interval > 1;
+
+      els.refRecurrenceWrap.style.display = showRecurrence ? 'block' : 'none';
+      els.refRecurrenceSlotWrap.style.display = showSlot ? 'block' : 'none';
+    }
+
     function updateHoursModeVisibility() {
       const mode = els.hoursMode.value;
       const applyTo = els.hoursApplyTo.value;
@@ -1473,6 +1513,7 @@ $user = get_auth_user();
       els.hoursReference.style.display = mode === 'reference' ? 'block' : 'none';
       els.hoursDaily.style.display = mode === 'daily' ? 'block' : 'none';
       els.hoursWeekly.style.display = mode === 'weekly' ? 'block' : 'none';
+      updateRecurrenceVisibility();
     }
 
     function applyHoursDataToForm(rows = []) {
@@ -1482,6 +1523,8 @@ $user = get_auth_user();
         els.hoursMode.value = 'reference';
         els.refStart.value = '08:00';
         els.refEnd.value = '17:00';
+        els.refRecurrenceInterval.value = '1';
+        updateRecurrenceSlotOptions(1, 1);
         updateHoursModeVisibility();
         return;
       }
@@ -1493,6 +1536,11 @@ $user = get_auth_user();
         const first = rows.find(r => r.start_time && r.end_time) || rows[0];
         if (first.start_time) els.refStart.value = first.start_time.slice(0, 5);
         if (first.end_time) els.refEnd.value = first.end_time.slice(0, 5);
+        const recurrenceInterval = Math.max(1, Math.min(3, Number(first.recurrence_interval) || 1));
+        const recurrenceSlot = Math.max(1, Math.min(recurrenceInterval, Number(first.recurrence_slot) || 1));
+        els.refRecurrenceInterval.value = String(recurrenceInterval);
+        updateRecurrenceSlotOptions(recurrenceInterval, recurrenceSlot);
+
         const selectedDays = new Set(rows.map(r => Number(r.day_of_week)));
         document.querySelectorAll('.ref-day').forEach(cb => {
           cb.checked = selectedDays.has(Number(cb.value));
@@ -1523,6 +1571,11 @@ $user = get_auth_user();
         if (els.hoursApplyTo.value === 'week') {
           ensureWeekDefault();
           url += '&week_start=' + encodeURIComponent(toMondayISO(els.hoursWeekStart.value));
+        } else {
+          const recurrenceInterval = Math.max(1, Math.min(3, Number(els.refRecurrenceInterval.value) || 1));
+          const recurrenceSlot = Math.max(1, Math.min(recurrenceInterval, Number(els.refRecurrenceSlot.value) || 1));
+          url += '&recurrence_interval=' + encodeURIComponent(recurrenceInterval);
+          url += '&recurrence_slot=' + encodeURIComponent(recurrenceSlot);
         }
         const data = await api(url);
         applyHoursDataToForm(data.hours || []);
@@ -1544,6 +1597,13 @@ $user = get_auth_user();
       loadHoursForSelected();
     });
     els.hoursMode.addEventListener('change', updateHoursModeVisibility);
+    els.refRecurrenceInterval.addEventListener('change', () => {
+      const interval = Math.max(1, Math.min(3, Number(els.refRecurrenceInterval.value) || 1));
+      updateRecurrenceSlotOptions(interval, 1);
+      updateRecurrenceVisibility();
+      loadHoursForSelected();
+    });
+    els.refRecurrenceSlot.addEventListener('change', loadHoursForSelected);
 
     els.hoursViewScope.addEventListener('change', loadHoursVisual);
     els.hoursViewEmployee.addEventListener('change', loadHoursVisual);
@@ -1600,6 +1660,13 @@ $user = get_auth_user();
         payload.start_time = els.refStart.value;
         payload.end_time = els.refEnd.value;
         payload.days = days;
+
+        if (applyTo === 'default') {
+          const recurrenceInterval = Math.max(1, Math.min(3, Number(els.refRecurrenceInterval.value) || 1));
+          const recurrenceSlot = Math.max(1, Math.min(recurrenceInterval, Number(els.refRecurrenceSlot.value) || 1));
+          payload.recurrence_interval = recurrenceInterval;
+          payload.recurrence_slot = recurrenceSlot;
+        }
       }
 
       if (mode === 'weekly') {
@@ -1627,6 +1694,7 @@ $user = get_auth_user();
 
     ensureWeekDefault();
     ensureHoursViewWeekDefault();
+    updateRecurrenceSlotOptions(1, 1);
     updateHoursModeVisibility();
     updateHoursViewVisibility();
     showHoursSection('editor');
