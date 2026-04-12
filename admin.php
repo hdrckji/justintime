@@ -106,6 +106,15 @@ $user = get_auth_user();
       display: grid;
       gap: 1rem;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-items: stretch;
+    }
+    .device-settings-grid .form-group {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+    }
+    .device-settings-grid .form-group label {
+      min-height: 2.35rem;
     }
     .device-settings-note {
       margin-top: 0.8rem;
@@ -125,6 +134,12 @@ $user = get_auth_user();
       display: grid;
       gap: 1rem;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+    .department-card > div {
+      min-height: 2.5rem;
+    }
+    .department-card button {
+      margin-left: auto;
     }
     @media (max-width: 920px) {
       .department-layout {
@@ -176,15 +191,16 @@ $user = get_auth_user();
   <main class="layout">
     <header class="hero">
       <h1>🔧 Administration</h1>
-      <p class="subtitle">Gestion des collaborateurs, absences et horaires</p>
+      <p class="subtitle">Gestion des collaborateurs, départements, absences et horaires</p>
     </header>
 
     <div class="admin-nav">
       <button class="tab-btn active" data-tab="employees">👥 Collaborateurs</button>
+      <button class="tab-btn" data-tab="departments">🏷️ Départements</button>
       <button class="tab-btn" data-tab="absences">📋 Absences</button>
       <button class="tab-btn" data-tab="hours">⏰ Horaires</button>
       <button class="tab-btn" data-tab="vacation-requests">🏖️ Congés</button>
-      <button class="tab-btn" data-tab="device-settings">📟 Boîtier RFID</button>
+      <button class="tab-btn" data-tab="device-settings">📟 Pointeuse</button>
     </div>
 
     <!-- Onglet Collaborateurs -->
@@ -249,10 +265,13 @@ $user = get_auth_user();
 
       <h3 style="margin-top: 2rem;">Liste des collaborateurs</h3>
       <div id="employees-list"></div>
+    </div>
 
+    <div id="departments" class="tab-content panel">
+      <h2>Gestion des départements</h2>
       <div class="department-layout">
         <div>
-          <h3 style="margin-top: 0;">Departements</h3>
+          <h3 style="margin-top: 0;">Nouveau département</h3>
           <form id="department-form" class="form-group">
             <label for="department-name">Nouveau departement</label>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -450,8 +469,8 @@ $user = get_auth_user();
     </div>
 
     <div id="device-settings" class="tab-content panel">
-      <h2>Configuration du boitier RFID</h2>
-      <p style="color: var(--ink-soft); margin-top: 0;">Ces options sont lues automatiquement par le boitier ESP32.</p>
+      <h2>Configuration de la pointeuse</h2>
+      <p style="color: var(--ink-soft); margin-top: 0;">Ces options sont lues automatiquement par la pointeuse ESP32.</p>
 
       <form id="device-settings-form" class="form-group">
         <div class="device-settings-grid">
@@ -475,14 +494,14 @@ $user = get_auth_user();
             </select>
           </div>
           <div class="form-group" style="margin: 0;">
-            <label for="cfg-buzzer-enabled">Buzzer actif</label>
+            <label for="cfg-buzzer-enabled">Haut-parleur actif</label>
             <select id="cfg-buzzer-enabled">
               <option value="1">Oui</option>
               <option value="0">Non</option>
             </select>
           </div>
         </div>
-        <button type="submit" class="btn-in" style="margin-top: 1rem;">Enregistrer la configuration boitier</button>
+        <button type="submit" class="btn-in" style="margin-top: 1rem;">Enregistrer la configuration pointeuse</button>
       </form>
 
       <div class="device-settings-note">
@@ -1162,7 +1181,7 @@ $user = get_auth_user();
             buzzer_enabled: els.cfgBuzzerEnabled.value === '1',
           }),
         });
-        showToast('Configuration boitier enregistree');
+        showToast('Configuration pointeuse enregistree');
       } catch (e) {
         showToast(e.message, true);
       }

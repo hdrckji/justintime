@@ -39,7 +39,7 @@ try {
         : (bool) $current['buzzer_enabled'];
 
     if ($ledEnabled === null || $buzzerEnabled === null) {
-        json_response(['error' => 'Les options LED/Buzzer doivent etre booleennes.'], 400);
+        json_response(['error' => 'Les options LED/Haut-parleur doivent etre booleennes.'], 400);
         exit;
     }
 
@@ -67,7 +67,7 @@ try {
     ]);
 
     json_response([
-        'message' => 'Configuration boitier enregistree.',
+        'message' => 'Configuration pointeuse enregistree.',
         'settings' => get_device_settings($pdo),
     ]);
 } catch (Throwable $e) {
