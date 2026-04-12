@@ -16,9 +16,62 @@ if (!$auth['employee_id']) {
 $emp_id = (int) $auth['employee_id'];
 $today  = date('Y-m-d');
 $year   = (int) date('Y');
+$action = trim((string) ($_GET['action'] ?? ''));
 
 try {
     $pdo = get_pdo();
+
+    // ---- Action history : pointages filtrés (année / mois / semaine) ----
+    if ($action === 'history') {
+        $filterYear  = isset($_GET['year'])  ? (int) $_GET['year']  : (int) date('Y');
+        $filterMonth = isset($_GET['month']) ? (int) $_GET['month'] : 0;
+        $filterWeek  = isset($_GET['week'])  ? (int) $_GET['week']  : 0;
+
+        $from = null;
+        $to   = null;
+
+        if ($filterWeek > 0 && $filterMonth > 0) {
+            // Semaine N du mois : 1ère occurrence du lundi dans ce mois
+            $firstDay = mktime(0, 0, 0, $filterMonth, 1, $filterYear);
+            $dayOfWeek = (int) date('N', $firstDay); // 1=lun..7=dim
+            $mondayOffset = ($dayOfWeek === 1) ? 0 : (8 - $dayOfWeek);
+            $firstMonday = $firstDay + $mondayOffset * 86400;
+            $weekStart = $firstMonday + ($filterWeek - 1) * 7 * 86400;
+            $weekEnd   = $weekStart + 6 * 86400;
+            $from = date('Y-m-d', $weekStart);
+            $to   = date('Y-m-d', $weekEnd);
+        } elseif ($filterMonth > 0) {
+            $from = sprintf('%04d-%02d-01', $filterYear, $filterMonth);
+            $lastDay = (int) date('t', mktime(0, 0, 0, $filterMonth, 1, $filterYear));
+            $to   = sprintf('%04d-%02d-%02d', $filterYear, $filterMonth, $lastDay);
+        } else {
+            $from = sprintf('%04d-01-01', $filterYear);
+            $to   = sprintf('%04d-12-31', $filterYear);
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT id, event_type, source, timestamp
+             FROM attendance_events
+             WHERE employee_id = ? AND DATE(timestamp) BETWEEN ? AND ?
+             ORDER BY timestamp ASC"
+        );
+        $stmt->execute([$emp_id, $from, $to]);
+        $rows = $stmt->fetchAll();
+
+        foreach ($rows as &$e) {
+            $e['timestamp'] = str_replace(' ', 'T', $e['timestamp']);
+        }
+        unset($e);
+
+        json_response([
+            'events' => $rows,
+            'from'   => $from,
+            'to'     => $to,
+        ]);
+        exit;
+    }
+
+    // ---- Action par défaut : données du tableau de bord employé ----
 
     // Infos de l'employe
     $stmt = $pdo->prepare(
