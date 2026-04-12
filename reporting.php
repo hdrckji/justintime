@@ -92,6 +92,61 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
 
     return $scheduled;
   };
+
+  $loadUnavailableDaysForEmployees = static function (PDO $pdo, array $employeeIds, string $weekStartSelected, string $weekEndSelected): array {
+    $unavailableByEmployee = [];
+    if (!$employeeIds) {
+      return $unavailableByEmployee;
+    }
+
+    $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+
+    $absenceSql =
+      "SELECT employee_id, start_date, end_date
+       FROM absences
+       WHERE employee_id IN ($placeholders)
+         AND end_date >= ?
+         AND start_date <= ?";
+    $absenceStmt = $pdo->prepare($absenceSql);
+    $absenceStmt->execute(array_merge($employeeIds, [$weekStartSelected, $weekEndSelected]));
+    $absenceRows = $absenceStmt->fetchAll();
+
+    $vacationSql =
+      "SELECT employee_id, start_date, end_date
+       FROM vacation_requests
+       WHERE employee_id IN ($placeholders)
+         AND status = 'approved'
+         AND end_date >= ?
+         AND start_date <= ?";
+    $vacationStmt = $pdo->prepare($vacationSql);
+    $vacationStmt->execute(array_merge($employeeIds, [$weekStartSelected, $weekEndSelected]));
+    $vacationRows = $vacationStmt->fetchAll();
+
+    foreach (array_merge($absenceRows, $vacationRows) as $row) {
+      $employeeId = (int) ($row['employee_id'] ?? 0);
+      $startDate = (string) ($row['start_date'] ?? '');
+      $endDate = (string) ($row['end_date'] ?? '');
+      if ($employeeId <= 0 || $startDate === '' || $endDate === '') {
+        continue;
+      }
+
+      $startAt = max(strtotime($startDate), strtotime($weekStartSelected));
+      $endAt = min(strtotime($endDate), strtotime($weekEndSelected));
+      if ($startAt === false || $endAt === false || $startAt > $endAt) {
+        continue;
+      }
+
+      for ($cursor = $startAt; $cursor <= $endAt; $cursor = strtotime('+1 day', $cursor)) {
+        if ($cursor === false) {
+          break;
+        }
+        $dateKey = date('Y-m-d', $cursor);
+        $unavailableByEmployee[$employeeId][$dateKey] = true;
+      }
+    }
+
+    return $unavailableByEmployee;
+  };
 ?>
 <!doctype html>
 <html lang="fr">
@@ -207,8 +262,10 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
           $contextLabel = $employee ? trim($employee['first_name'] . ' ' . $employee['last_name']) : 'Collaborateur';
 
           $scheduled = $loadScheduledForEmployee($pdo, $selected_emp_id, $hasWeekStart, $week_start_selected);
+          $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, [$selected_emp_id], $week_start_selected, $week_end_selected);
           for ($day = 0; $day < 7; $day++) {
-              $dailyScheduled[$day] = (float) ($scheduled[$day] ?? 0);
+            $isUnavailable = !empty($unavailableByEmployee[$selected_emp_id][$dates[$day]]);
+            $dailyScheduled[$day] = $isUnavailable ? 0.0 : (float) ($scheduled[$day] ?? 0);
 
               $stmt = $pdo->prepare(
                   'SELECT COALESCE(TIMESTAMPDIFF(SECOND, MIN(timestamp), MAX(timestamp)), 0)
@@ -235,11 +292,16 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
 
           $contextCountLabel = 'Collaborateurs';
           $contextCountValue = (string) count($employeeIds);
+            $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, $employeeIds, $week_start_selected, $week_end_selected);
 
           foreach ($employeeIds as $employeeId) {
               $employeeSchedule = $loadScheduledForEmployee($pdo, $employeeId, $hasWeekStart, $week_start_selected);
               for ($day = 0; $day < 7; $day++) {
-                  $dailyScheduled[$day] += (float) ($employeeSchedule[$day] ?? 0);
+                $isUnavailable = !empty($unavailableByEmployee[$employeeId][$dates[$day]]);
+                if ($isUnavailable) {
+                  continue;
+                }
+                $dailyScheduled[$day] += (float) ($employeeSchedule[$day] ?? 0);
               }
           }
 

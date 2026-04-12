@@ -23,8 +23,29 @@ try {
     $stmt = $pdo->prepare(
         'SELECT COUNT(*) AS count FROM attendance_events WHERE DATE(timestamp) = ?'
     );
-    $stmt->execute([date('Y-m-d')]);
+    $today = date('Y-m-d');
+    $stmt->execute([$today]);
     $events_today = (int) $stmt->fetch()['count'];
+
+    $unavailableRows = $pdo->prepare(
+        "SELECT DISTINCT employee_id
+         FROM (
+             SELECT employee_id
+             FROM absences
+             WHERE start_date <= ? AND end_date >= ?
+             UNION
+             SELECT employee_id
+             FROM vacation_requests
+             WHERE status = 'approved'
+               AND start_date <= ?
+               AND end_date >= ?
+         ) x"
+    );
+    $unavailableRows->execute([$today, $today, $today, $today]);
+    $unavailableToday = [];
+    foreach ($unavailableRows->fetchAll(PDO::FETCH_COLUMN) as $employeeId) {
+        $unavailableToday[(int) $employeeId] = true;
+    }
 
     $latest = $pdo->query(
         'SELECT e.employee_id, e.event_type
@@ -43,18 +64,40 @@ try {
 
     $employee_statuses = [];
     $present_count     = 0;
+    $present_expected_count = 0;
+    $unavailable_count = 0;
     foreach ($employees as $emp) {
+        $employeeId = (int) $emp['id'];
         $is_present = ($status_map[(int) $emp['id']] ?? 'out') === 'in';
+        $is_unavailable = !empty($unavailableToday[$employeeId]);
+
         if ($is_present) {
             $present_count++;
         }
+
+        if ($is_unavailable) {
+            $unavailable_count++;
+        } elseif ($is_present) {
+            $present_expected_count++;
+        }
+
+        $status = 'absent';
+        if ($is_present) {
+            $status = 'present';
+        } elseif ($is_unavailable) {
+            $status = 'indisponible';
+        }
+
         $employee_statuses[] = [
-            'id'       => (int) $emp['id'],
+            'id'       => $employeeId,
             'name'     => $emp['first_name'] . ' ' . $emp['last_name'],
             'badge_id' => $emp['badge_id'],
-            'status'   => $is_present ? 'present' : 'absent',
+            'status'   => $status,
         ];
     }
+
+    $expected_today = max(count($employee_statuses) - $unavailable_count, 0);
+    $absent_expected = max($expected_today - $present_expected_count, 0);
 
     $recent = $pdo->query(
         "SELECT a.id, a.timestamp, a.event_type, a.source,
@@ -75,8 +118,10 @@ try {
         'summary' => [
             'employees_total' => count($employee_statuses),
             'present'         => $present_count,
-            'absent'          => max(count($employee_statuses) - $present_count, 0),
+            'absent'          => $absent_expected,
             'events_today'    => $events_today,
+            'expected_today'  => $expected_today,
+            'unavailable'     => $unavailable_count,
         ],
         'employees' => $employee_statuses,
         'events'    => $recent,

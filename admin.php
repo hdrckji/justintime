@@ -135,6 +135,121 @@ $user = get_auth_user();
       gap: 1rem;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     }
+    .hours-visual-block {
+      margin-top: 1.5rem;
+      padding-top: 1.2rem;
+      border-top: 1px dashed var(--line);
+    }
+    .hours-visual-title {
+      margin: 0 0 0.3rem 0;
+      font-size: 1.05rem;
+    }
+    .hours-visual-subtitle {
+      margin: 0 0 1rem 0;
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+    }
+    .hours-balance-summary {
+      display: grid;
+      gap: 0.8rem;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      margin-top: 1rem;
+    }
+    .hours-balance-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.7rem 0.8rem;
+      background: var(--surface-2);
+    }
+    .hours-balance-card p {
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: 0.8rem;
+    }
+    .hours-balance-card strong {
+      display: block;
+      margin-top: 0.35rem;
+      font-size: 1.15rem;
+      color: var(--ink);
+    }
+    .hours-equilibrium-badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.22rem 0.6rem;
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-top: 0.4rem;
+      background: rgba(52, 211, 153, 0.12);
+      color: var(--ok);
+    }
+    .hours-day-list {
+      display: grid;
+      gap: 0.65rem;
+      margin-top: 1rem;
+    }
+    .hours-day-item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.6rem 0.75rem;
+      background: var(--surface-2);
+    }
+    .hours-day-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      align-items: baseline;
+      margin-bottom: 0.35rem;
+    }
+    .hours-day-head strong {
+      font-size: 0.92rem;
+    }
+    .hours-day-head span {
+      font-size: 0.82rem;
+      color: var(--ink-soft);
+    }
+    .hours-day-bar {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+    }
+    .hours-day-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), #6dd3fb);
+    }
+    .hours-department-people {
+      margin-top: 1rem;
+      display: grid;
+      gap: 0.5rem;
+    }
+    .hours-person-row {
+      display: grid;
+      grid-template-columns: minmax(150px, 1fr) 2fr auto;
+      gap: 0.6rem;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.45rem 0.6rem;
+      background: var(--surface-2);
+    }
+    .hours-person-name {
+      font-size: 0.86rem;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hours-empty {
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 0.9rem;
+      color: var(--ink-soft);
+      background: var(--surface-2);
+      margin-top: 1rem;
+    }
     .department-card > div {
       min-height: 2.5rem;
     }
@@ -157,6 +272,10 @@ $user = get_auth_user();
       }
       .employee-row { flex-direction: column; align-items: flex-start; }
       .employee-row button { margin-left: 0; width: 100%; }
+      .hours-person-row {
+        grid-template-columns: 1fr;
+        gap: 0.35rem;
+      }
     }
   </style>
   <style>
@@ -421,6 +540,43 @@ $user = get_auth_user();
         </div>
       </div>
       <button id="btn-save-hours" class="btn-in" style="margin-top: 1rem;">Enregistrer horaires</button>
+
+      <div class="hours-visual-block">
+        <h3 class="hours-visual-title">Consultation visuelle des horaires</h3>
+        <p class="hours-visual-subtitle">Consulte l'equilibre des plages horaires par collaborateur ou par departement.</p>
+
+        <div class="admin-top-grid">
+          <div class="form-group">
+            <label for="hours-view-scope">Vue</label>
+            <select id="hours-view-scope">
+              <option value="employee">Par collaborateur</option>
+              <option value="department">Par departement</option>
+            </select>
+          </div>
+          <div class="form-group" id="hours-view-employee-wrap">
+            <label for="hours-view-employee">Collaborateur</label>
+            <select id="hours-view-employee"></select>
+          </div>
+          <div class="form-group" id="hours-view-department-wrap" style="display:none;">
+            <label for="hours-view-department">Departement</label>
+            <select id="hours-view-department"></select>
+          </div>
+          <div class="form-group">
+            <label for="hours-view-apply-to">Portee</label>
+            <select id="hours-view-apply-to">
+              <option value="default">Horaire de reference</option>
+              <option value="week">Semaine specifique</option>
+            </select>
+          </div>
+          <div class="form-group" id="hours-view-week-wrap" style="display:none;">
+            <label for="hours-view-week-start">Semaine du (lundi)</label>
+            <input id="hours-view-week-start" type="date" />
+          </div>
+        </div>
+
+        <div id="hours-balance-summary" class="hours-balance-summary"></div>
+        <div id="hours-visual-container"></div>
+      </div>
     </div>
 
     <!-- Onglet Demandes de congés -->
@@ -551,6 +707,16 @@ $user = get_auth_user();
       weeklyHoursTotal: document.getElementById('weekly-hours-total'),
       hoursGrid: document.getElementById('hours-grid'),
       btnSaveHours: document.getElementById('btn-save-hours'),
+      hoursViewScope: document.getElementById('hours-view-scope'),
+      hoursViewEmployeeWrap: document.getElementById('hours-view-employee-wrap'),
+      hoursViewEmployee: document.getElementById('hours-view-employee'),
+      hoursViewDepartmentWrap: document.getElementById('hours-view-department-wrap'),
+      hoursViewDepartment: document.getElementById('hours-view-department'),
+      hoursViewApplyTo: document.getElementById('hours-view-apply-to'),
+      hoursViewWeekWrap: document.getElementById('hours-view-week-wrap'),
+      hoursViewWeekStart: document.getElementById('hours-view-week-start'),
+      hoursBalanceSummary: document.getElementById('hours-balance-summary'),
+      hoursVisualContainer: document.getElementById('hours-visual-container'),
       vacStatusFilter: document.getElementById('vac-status-filter'),
       vacRequestsList: document.getElementById('vac-requests-list'),
       deviceSettingsForm: document.getElementById('device-settings-form'),
@@ -618,11 +784,43 @@ $user = get_auth_user();
       }
     }
 
+    function renderHoursViewDepartmentOptions(preferredValue = '') {
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.hoursViewDepartment.value || '');
+
+      els.hoursViewDepartment.innerHTML = [
+        '<option value="">-- Choisir un departement --</option>',
+        ...departmentsCache.map(d => `<option value="${d.id}">${d.name}</option>`),
+      ].join('');
+
+      if (wanted && departmentsCache.some(d => String(d.id) === wanted)) {
+        els.hoursViewDepartment.value = wanted;
+      }
+    }
+
+    function renderHoursViewEmployeeOptions(preferredValue = '') {
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.hoursViewEmployee.value || '');
+
+      els.hoursViewEmployee.innerHTML = [
+        '<option value="">-- Choisir un collaborateur --</option>',
+        ...empCache.map(e => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`),
+      ].join('');
+
+      if (wanted && empCache.some(e => String(e.id) === wanted)) {
+        els.hoursViewEmployee.value = wanted;
+      }
+    }
+
     async function loadDepartments(preferredValue = '') {
       try {
+        const prevHoursViewDepartment = els.hoursViewDepartment.value;
         const data = await api('api/departments.php?action=list');
         departmentsCache = Array.isArray(data.departments) ? data.departments : [];
         renderDepartmentOptions(preferredValue);
+        renderHoursViewDepartmentOptions(prevHoursViewDepartment);
 
         els.departmentsList.innerHTML = departmentsCache.length
           ? departmentsCache.map(d => `
@@ -642,6 +840,7 @@ $user = get_auth_user();
       try {
         const prevAbsValue = els.absEmployee.value;
         const prevHoursValue = els.hoursEmployee.value;
+        const prevHoursViewEmployee = els.hoursViewEmployee.value;
         const currentEditId = els.empId.value;
 
         const data = await api('api/employees.php?action=list');
@@ -671,6 +870,7 @@ $user = get_auth_user();
 
         els.absEmployee.innerHTML = optionsHtml;
         els.hoursEmployee.innerHTML = optionsHtml;
+        renderHoursViewEmployeeOptions(prevHoursViewEmployee);
 
         const existingIds = new Set(data.employees.map(e => String(e.id)));
         const preferredId = currentEditId || prevHoursValue;
@@ -683,6 +883,17 @@ $user = get_auth_user();
         if (existingIds.has(preferredId)) {
           els.hoursEmployee.value = preferredId;
         }
+
+        if (!els.hoursViewEmployee.value && empCache.length) {
+          els.hoursViewEmployee.value = String(empCache[0].id);
+        }
+
+        if (!els.hoursViewDepartment.value && departmentsCache.length) {
+          els.hoursViewDepartment.value = String(departmentsCache[0].id);
+        }
+
+        loadHoursForSelected();
+        loadHoursVisual();
       } catch (e) { showToast(e.message, true); }
     }
 
@@ -849,6 +1060,214 @@ $user = get_auth_user();
       }).join('');
     }
 
+    function ensureHoursViewWeekDefault() {
+      if (!els.hoursViewWeekStart.value) {
+        els.hoursViewWeekStart.value = toMondayISO(new Date().toISOString().slice(0, 10));
+      }
+    }
+
+    function updateHoursViewVisibility() {
+      const scope = els.hoursViewScope.value;
+      const applyTo = els.hoursViewApplyTo.value;
+
+      els.hoursViewEmployeeWrap.style.display = scope === 'employee' ? 'block' : 'none';
+      els.hoursViewDepartmentWrap.style.display = scope === 'department' ? 'block' : 'none';
+      els.hoursViewWeekWrap.style.display = applyTo === 'week' ? 'block' : 'none';
+    }
+
+    function formatHours(value) {
+      const num = Number(value) || 0;
+      return num.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    function scheduleFromRows(rows = []) {
+      const hours = Array(7).fill(0);
+      const ranges = Array(7).fill('');
+
+      rows.forEach(row => {
+        const day = Number(row.day_of_week);
+        if (!Number.isInteger(day) || day < 0 || day > 6) {
+          return;
+        }
+        const dayHours = Number(row.hours || 0);
+        hours[day] += Number.isFinite(dayHours) ? dayHours : 0;
+
+        if (row.start_time && row.end_time) {
+          ranges[day] = `${String(row.start_time).slice(0, 5)} - ${String(row.end_time).slice(0, 5)}`;
+        }
+      });
+
+      return { hours, ranges };
+    }
+
+    function renderBalanceSummary(hours = [], extraLabel = '', extraValue = '') {
+      const total = hours.reduce((acc, h) => acc + h, 0);
+      const nonZero = hours.filter(h => h > 0);
+      const maxDay = Math.max(...hours, 0);
+      const minNonZero = nonZero.length ? Math.min(...nonZero) : 0;
+      const spread = nonZero.length ? maxDay - minNonZero : 0;
+
+      let equilibriumText = 'Equilibre excellent';
+      let equilibriumClass = 'hours-equilibrium-badge';
+      if (spread > 3) {
+        equilibriumText = 'Equilibre a lisser';
+      } else if (spread > 1.5) {
+        equilibriumText = 'Equilibre moyen';
+      }
+
+      els.hoursBalanceSummary.innerHTML = `
+        <div class="hours-balance-card">
+          <p>Total hebdomadaire</p>
+          <strong>${formatHours(total)} h</strong>
+        </div>
+        <div class="hours-balance-card">
+          <p>Charge max sur un jour</p>
+          <strong>${formatHours(maxDay)} h</strong>
+        </div>
+        <div class="hours-balance-card">
+          <p>Ecarts de charge</p>
+          <strong>${formatHours(spread)} h</strong>
+          <span class="${equilibriumClass}">${equilibriumText}</span>
+        </div>
+        <div class="hours-balance-card">
+          <p>${extraLabel || 'Jours actifs'}</p>
+          <strong>${extraValue || String(nonZero.length)}</strong>
+        </div>
+      `;
+    }
+
+    function renderDayVisual(hours = [], ranges = []) {
+      const maxHours = Math.max(...hours, 0, 1);
+
+      els.hoursVisualContainer.innerHTML = `
+        <div class="hours-day-list">
+          ${dayLabels.map((day, idx) => {
+            const h = Number(hours[idx] || 0);
+            const percent = Math.max(0, Math.min(100, (h / maxHours) * 100));
+            const rangeLabel = ranges[idx] ? `Plage: ${ranges[idx]}` : (h > 0 ? 'Volume sans plage precise' : 'Aucune plage');
+
+            return `
+              <div class="hours-day-item">
+                <div class="hours-day-head">
+                  <strong>${day}</strong>
+                  <span>${formatHours(h)} h</span>
+                </div>
+                <div class="hours-day-bar"><div class="hours-day-bar-fill" style="width: ${percent.toFixed(1)}%;"></div></div>
+                <span style="display:block; margin-top:0.35rem; color: var(--ink-soft); font-size:0.8rem;">${rangeLabel}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function hoursViewWeekParam() {
+      if (els.hoursViewApplyTo.value !== 'week') {
+        return '';
+      }
+      ensureHoursViewWeekDefault();
+      return '&week_start=' + encodeURIComponent(toMondayISO(els.hoursViewWeekStart.value));
+    }
+
+    async function fetchScheduleRows(employeeId) {
+      if (!employeeId) {
+        return [];
+      }
+      const url = 'api/scheduled_hours.php?action=get&employee_id=' + encodeURIComponent(employeeId) + hoursViewWeekParam();
+      const data = await api(url);
+      return data.hours || [];
+    }
+
+    async function loadHoursVisual() {
+      try {
+        updateHoursViewVisibility();
+
+        const scope = els.hoursViewScope.value;
+        if (scope === 'employee') {
+          const employeeId = Number(els.hoursViewEmployee.value || 0);
+          if (!employeeId) {
+            els.hoursBalanceSummary.innerHTML = '';
+            els.hoursVisualContainer.innerHTML = '<div class="hours-empty">Choisis un collaborateur pour visualiser son horaire.</div>';
+            return;
+          }
+
+          const employee = empCache.find(e => Number(e.id) === employeeId);
+          const rows = await fetchScheduleRows(employeeId);
+          const schedule = scheduleFromRows(rows);
+          renderBalanceSummary(schedule.hours, 'Collaborateur', employee ? `${employee.first_name} ${employee.last_name}` : 'Selection');
+          renderDayVisual(schedule.hours, schedule.ranges);
+          return;
+        }
+
+        const departmentId = Number(els.hoursViewDepartment.value || 0);
+        if (!departmentId) {
+          els.hoursBalanceSummary.innerHTML = '';
+          els.hoursVisualContainer.innerHTML = '<div class="hours-empty">Choisis un departement pour visualiser les horaires consolides.</div>';
+          return;
+        }
+
+        const departmentEmployees = empCache.filter(e => Number(e.department_id) === departmentId);
+        if (!departmentEmployees.length) {
+          els.hoursBalanceSummary.innerHTML = '';
+          els.hoursVisualContainer.innerHTML = '<div class="hours-empty">Aucun collaborateur actif dans ce departement.</div>';
+          return;
+        }
+
+        const perEmployeeRows = await Promise.all(
+          departmentEmployees.map(async e => ({
+            employee: e,
+            rows: await fetchScheduleRows(e.id),
+          }))
+        );
+
+        const aggregate = Array(7).fill(0);
+        const peopleTotals = [];
+
+        perEmployeeRows.forEach(item => {
+          const schedule = scheduleFromRows(item.rows);
+          const total = schedule.hours.reduce((acc, h) => acc + h, 0);
+          peopleTotals.push({
+            name: `${item.employee.first_name} ${item.employee.last_name}`,
+            total,
+          });
+          for (let day = 0; day < 7; day++) {
+            aggregate[day] += schedule.hours[day];
+          }
+        });
+
+        const department = departmentsCache.find(d => Number(d.id) === departmentId);
+        renderBalanceSummary(
+          aggregate,
+          'Collaborateurs',
+          `${departmentEmployees.length} (${department ? department.name : 'Departement'})`
+        );
+        renderDayVisual(aggregate, Array(7).fill('Somme des plages du departement'));
+
+        const maxTotal = Math.max(...peopleTotals.map(p => p.total), 1);
+        const rowsHtml = peopleTotals
+          .sort((a, b) => b.total - a.total)
+          .map(p => {
+            const percent = Math.max(0, Math.min(100, (p.total / maxTotal) * 100));
+            return `
+              <div class="hours-person-row">
+                <span class="hours-person-name">${p.name}</span>
+                <div class="hours-day-bar"><div class="hours-day-bar-fill" style="width:${percent.toFixed(1)}%;"></div></div>
+                <strong>${formatHours(p.total)} h</strong>
+              </div>
+            `;
+          })
+          .join('');
+
+        els.hoursVisualContainer.insertAdjacentHTML(
+          'beforeend',
+          `<div class="hours-department-people"><h4 style="margin:0.8rem 0 0.3rem;">Repartition par collaborateur</h4>${rowsHtml}</div>`
+        );
+      } catch (e) {
+        els.hoursBalanceSummary.innerHTML = '';
+        els.hoursVisualContainer.innerHTML = `<div class="hours-empty">Erreur de chargement: ${e.message}</div>`;
+      }
+    }
+
     function updateHoursModeVisibility() {
       const mode = els.hoursMode.value;
       const applyTo = els.hoursApplyTo.value;
@@ -910,6 +1329,9 @@ $user = get_auth_user();
         }
         const data = await api(url);
         applyHoursDataToForm(data.hours || []);
+        if (!els.hoursViewEmployee.value) {
+          els.hoursViewEmployee.value = String(empId);
+        }
       } catch (e) {
         showToast(e.message, true);
       }
@@ -925,6 +1347,15 @@ $user = get_auth_user();
       loadHoursForSelected();
     });
     els.hoursMode.addEventListener('change', updateHoursModeVisibility);
+
+    els.hoursViewScope.addEventListener('change', loadHoursVisual);
+    els.hoursViewEmployee.addEventListener('change', loadHoursVisual);
+    els.hoursViewDepartment.addEventListener('change', loadHoursVisual);
+    els.hoursViewApplyTo.addEventListener('change', loadHoursVisual);
+    els.hoursViewWeekStart.addEventListener('change', () => {
+      els.hoursViewWeekStart.value = toMondayISO(els.hoursViewWeekStart.value);
+      loadHoursVisual();
+    });
 
     els.btnSaveHours.addEventListener('click', async () => {
       const empId = els.hoursEmployee.value;
@@ -982,13 +1413,16 @@ $user = get_auth_user();
         });
         showToast('Horaires enregistres');
         await loadHoursForSelected();
+        await loadHoursVisual();
       } catch (e) {
         showToast(e.message, true);
       }
     });
 
     ensureWeekDefault();
+    ensureHoursViewWeekDefault();
     updateHoursModeVisibility();
+    updateHoursViewVisibility();
     renderHoursGrid([]);
 
     // Geocodage via Nominatim (OpenStreetMap)
