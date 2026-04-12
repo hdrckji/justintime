@@ -36,18 +36,8 @@ if ($user['role'] === 'employee') {
       <header class="hero">
         <p class="kicker">PME - 20 collaborateurs</p>
         <h1>Tableau de bord</h1>
-        <p class="subtitle">Pointage RFID et manuel en temps réel, avec vue d'ensemble des présences.</p>
+        <p class="subtitle">Vue d'ensemble des présences et des actions RH à traiter.</p>
       </header>
-
-      <section class="panel panel-scan" aria-labelledby="scan-title">
-        <h2 id="scan-title">Badge RFID</h2>
-        <p>Scannez le badge puis validez avec Entree.</p>
-        <form id="rfid-form" class="form-inline">
-          <label for="badge-input" class="sr-only">Badge RFID</label>
-          <input id="badge-input" name="badge" type="text" autocomplete="off" placeholder="Ex: RFID-1001" required />
-          <button type="submit">Pointer</button>
-        </form>
-      </section>
 
       <section class="panel panel-manual" aria-labelledby="manual-title">
         <h2 id="manual-title">Pointage manuel</h2>
@@ -78,6 +68,10 @@ if ($user['role'] === 'employee') {
           <p>Evenements aujourd'hui</p>
           <strong id="stat-events">0</strong>
         </article>
+        <article class="stat-card">
+          <p>Corrections a traiter</p>
+          <strong id="stat-corrections">0</strong>
+        </article>
       </section>
 
       <section class="panel" aria-labelledby="team-title">
@@ -86,24 +80,6 @@ if ($user['role'] === 'employee') {
           <button id="refresh-btn" class="ghost">Actualiser</button>
         </div>
         <div id="employee-list" class="employee-list"></div>
-      </section>
-
-      <section class="panel" aria-labelledby="events-title">
-        <h2 id="events-title">Derniers pointages</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Heure</th>
-                <th>Employe</th>
-                <th>Badge</th>
-                <th>Action</th>
-                <th>Source</th>
-              </tr>
-            </thead>
-            <tbody id="events-body"></tbody>
-          </table>
-        </div>
       </section>
 
       <section id="toast" class="toast" role="status" aria-live="polite"></section>

@@ -125,20 +125,61 @@ try {
     $expected_today = max(count($employee_statuses) - $unavailable_count, 0);
     $absent_expected = max($expected_today - $present_expected_count, 0);
 
-    $recent = $pdo->query(
-        "SELECT a.id, a.timestamp, a.event_type, a.source,
-                TRIM(CONCAT(COALESCE(e.first_name,''), ' ', COALESCE(e.last_name,''))) AS name,
-                e.badge_id
-         FROM attendance_events a
-         JOIN employees e ON e.id = a.employee_id
-         ORDER BY a.id DESC
-         LIMIT 30"
-    )->fetchAll();
+    $correctionsPending = 0;
+    $fromDate = date('Y-m-d', strtotime('-30 day'));
 
-    foreach ($recent as &$r) {
-        $r['timestamp'] = format_iso_timestamp((string) ($r['timestamp'] ?? ''));
+    if (table_exists($pdo, 'attendance_events')) {
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*)
+             FROM (
+                 SELECT employee_id, DATE(timestamp) AS day
+                 FROM attendance_events
+                 WHERE DATE(timestamp) >= ? AND DATE(timestamp) < CURDATE()
+                 GROUP BY employee_id, DATE(timestamp)
+                 HAVING SUM(event_type = 'in') != SUM(event_type = 'out')
+             ) unpaired_days"
+        );
+        $stmt->execute([$fromDate]);
+        $correctionsPending += (int) $stmt->fetchColumn();
     }
-    unset($r);
+
+    if (table_exists($pdo, 'attendance_events') && table_exists($pdo, 'scheduled_hours')) {
+        $scheduledCols = $pdo->query('SHOW COLUMNS FROM scheduled_hours')->fetchAll(PDO::FETCH_COLUMN);
+        $hasWeekStart = in_array('week_start', $scheduledCols, true);
+
+        $sql = $hasWeekStart
+            ? 'SELECT DISTINCT employee_id, day_of_week FROM scheduled_hours WHERE hours > 0 AND week_start IS NULL'
+            : 'SELECT DISTINCT employee_id, day_of_week FROM scheduled_hours WHERE hours > 0';
+        $schedRows = $pdo->query($sql)->fetchAll();
+
+        $scheduledDays = [];
+        foreach ($schedRows as $row) {
+            $scheduledDays[(int) ($row['employee_id'] ?? 0)][(int) ($row['day_of_week'] ?? -1)] = true;
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT DISTINCT employee_id, DATE(timestamp) AS day
+             FROM attendance_events
+             WHERE DATE(timestamp) >= ? AND DATE(timestamp) < CURDATE()'
+        );
+        $stmt->execute([$fromDate]);
+        $activeDays = $stmt->fetchAll();
+
+        $unscheduledCount = 0;
+        foreach ($activeDays as $row) {
+            $employeeId = (int) ($row['employee_id'] ?? 0);
+            if ($employeeId <= 0 || !isset($scheduledDays[$employeeId])) {
+                continue;
+            }
+
+            $dow = (int) date('w', strtotime((string) ($row['day'] ?? '')));
+            if (!isset($scheduledDays[$employeeId][$dow])) {
+                $unscheduledCount++;
+            }
+        }
+
+        $correctionsPending += $unscheduledCount;
+    }
 
     json_response([
         'summary' => [
@@ -148,9 +189,9 @@ try {
             'events_today'    => $events_today,
             'expected_today'  => $expected_today,
             'unavailable'     => $unavailable_count,
+            'corrections_pending' => $correctionsPending,
         ],
         'employees' => $employee_statuses,
-        'events'    => $recent,
     ]);
 } catch (Throwable $e) {
     json_response(['error' => $e->getMessage()], 500);

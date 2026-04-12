@@ -1,6 +1,4 @@
 const els = {
-  rfidForm: document.getElementById('rfid-form'),
-  badgeInput: document.getElementById('badge-input'),
   employeeSelect: document.getElementById('employee-select'),
   btnIn: document.getElementById('btn-in'),
   btnOut: document.getElementById('btn-out'),
@@ -9,8 +7,8 @@ const els = {
   statPresent: document.getElementById('stat-present'),
   statAbsent: document.getElementById('stat-absent'),
   statEvents: document.getElementById('stat-events'),
+  statCorrections: document.getElementById('stat-corrections'),
   employeeList: document.getElementById('employee-list'),
-  eventsBody: document.getElementById('events-body'),
   toast: document.getElementById('toast'),
 };
 
@@ -51,30 +49,6 @@ async function api(path, options = {}) {
   return payload;
 }
 
-function formatTime(iso) {
-  if (!iso) {
-    return '-';
-  }
-
-  const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(iso)
-    ? `${iso}Z`
-    : iso;
-
-  const d = new Date(normalized);
-  if (Number.isNaN(d.getTime())) {
-    return iso;
-  }
-
-  return d.toLocaleString('fr-FR', {
-    timeZone: 'Europe/Paris',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-  });
-}
-
 function renderEmployees(employees) {
   const previousSelection = els.employeeSelect.value;
 
@@ -102,22 +76,6 @@ function renderEmployees(employees) {
   }
 }
 
-function renderEvents(events) {
-  els.eventsBody.innerHTML = '';
-
-  events.forEach((event) => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${formatTime(event.timestamp)}</td>
-      <td>${event.name}</td>
-      <td class="code">${event.badge_id}</td>
-      <td>${event.event_type === 'in' ? 'Entree' : 'Sortie'}</td>
-      <td>${event.source === 'rfid' ? 'RFID' : 'Manuel'}</td>
-    `;
-    els.eventsBody.append(row);
-  });
-}
-
 async function loadDashboard(force = false) {
   if (dashboardRequestInFlight && !force) {
     return;
@@ -132,9 +90,9 @@ async function loadDashboard(force = false) {
     els.statPresent.textContent = data.summary.present;
     els.statAbsent.textContent = data.summary.absent;
     els.statEvents.textContent = data.summary.events_today;
+    els.statCorrections.textContent = data.summary.corrections_pending ?? 0;
 
     renderEmployees(data.employees);
-    renderEvents(data.events);
   } finally {
     dashboardRequestInFlight = false;
   }
@@ -150,29 +108,6 @@ function startAutoRefresh() {
       loadDashboard().catch((error) => showToast(error.message, true));
     }
   }, AUTO_REFRESH_MS);
-}
-
-async function submitRfid(event) {
-  event.preventDefault();
-  const badge_id = els.badgeInput.value.trim();
-
-  if (!badge_id) {
-    return;
-  }
-
-  try {
-    const res = await api('/api/attendance/rfid', {
-      method: 'POST',
-      body: JSON.stringify({ badge_id }),
-    });
-    showToast(res.message);
-    els.badgeInput.value = '';
-    await loadDashboard();
-  } catch (error) {
-    showToast(error.message, true);
-  } finally {
-    els.badgeInput.focus();
-  }
 }
 
 async function submitManual(eventType) {
@@ -195,7 +130,6 @@ async function submitManual(eventType) {
 }
 
 function wireEvents() {
-  els.rfidForm.addEventListener('submit', submitRfid);
   els.btnIn.addEventListener('click', () => submitManual('in'));
   els.btnOut.addEventListener('click', () => submitManual('out'));
   els.refreshBtn.addEventListener('click', () => {
@@ -216,7 +150,7 @@ function wireEvents() {
 async function boot() {
   wireEvents();
   startAutoRefresh();
-  els.badgeInput.focus();
+  els.employeeSelect.focus();
 
   try {
     await loadDashboard(true);
