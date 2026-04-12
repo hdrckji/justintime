@@ -165,6 +165,24 @@ function ensure_telework_schema(PDO $pdo): void
 
 function ensure_payroll_schema(PDO $pdo): void
 {
+    if (jit_table_exists($pdo, 'absences')) {
+        if (!jit_column_exists($pdo, 'absences', 'payroll_code')) {
+            $pdo->exec("ALTER TABLE absences ADD COLUMN payroll_code VARCHAR(40) NOT NULL DEFAULT '' AFTER type");
+        }
+
+        if (!jit_column_exists($pdo, 'absences', 'paid_ratio')) {
+            $pdo->exec("ALTER TABLE absences ADD COLUMN paid_ratio DECIMAL(5,2) NOT NULL DEFAULT 1.00 AFTER payroll_code");
+        }
+
+        if (!jit_column_exists($pdo, 'absences', 'credit_scheduled_hours')) {
+            $pdo->exec("ALTER TABLE absences ADD COLUMN credit_scheduled_hours TINYINT(1) NOT NULL DEFAULT 1 AFTER paid_ratio");
+        }
+
+        if (!jit_index_exists($pdo, 'absences', 'idx_absences_payroll_code')) {
+            $pdo->exec("ALTER TABLE absences ADD INDEX idx_absences_payroll_code (payroll_code)");
+        }
+    }
+
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS payroll_closures (
             id INT PRIMARY KEY AUTO_INCREMENT,
@@ -427,6 +445,26 @@ function assert_period_open(PDO $pdo, string $dateIso, string $message = 'Cette 
 {
     if (is_period_closed($pdo, $dateIso)) {
         throw new RuntimeException($message);
+    }
+}
+
+function assert_period_range_open(PDO $pdo, string $startDateIso, string $endDateIso, string $message = 'Cette periode est cloturee.'): void
+{
+    $startTs = strtotime($startDateIso);
+    $endTs = strtotime($endDateIso);
+    if ($startTs === false || $endTs === false) {
+        throw new RuntimeException('Periode invalide.');
+    }
+
+    if ($endTs < $startTs) {
+        [$startTs, $endTs] = [$endTs, $startTs];
+    }
+
+    $cursor = strtotime(date('Y-m-01', $startTs));
+    $limit = strtotime(date('Y-m-01', $endTs));
+    while ($cursor !== false && $cursor <= $limit) {
+        assert_period_open($pdo, date('Y-m-d', $cursor), $message);
+        $cursor = strtotime('+1 month', $cursor);
     }
 }
 

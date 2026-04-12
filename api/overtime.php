@@ -48,19 +48,42 @@ try {
         $empId = (int) $employee['id'];
         $scheduled = 0.0;
         $worked = 0.0;
+        $paidAbsence = 0.0;
+        $unpaidAbsence = 0.0;
+        $training = 0.0;
+        $authorizedPaid = 0.0;
+        $sick = 0.0;
+        $vacation = 0.0;
+        $payable = 0.0;
         $cumulative = 0.0;
 
         foreach ($dates as $dateIso) {
-            $scheduled += jit_scheduled_hours_for_day($pdo, $empId, $dateIso);
-            $dayWork = jit_worked_hours_for_day($pdo, $empId, $dateIso);
-            $worked += (float) ($dayWork['hours'] ?? 0);
+            $day = jit_payroll_breakdown_for_day($pdo, $empId, $dateIso);
+            $scheduled += (float) $day['scheduled_hours'];
+            $worked += (float) $day['worked_hours'];
+            $paidAbsence += (float) $day['paid_absence_hours'];
+            $unpaidAbsence += (float) $day['unpaid_absence_hours'];
+            $training += (float) $day['training_hours'];
+            $authorizedPaid += (float) $day['authorized_paid_hours'];
+            $sick += (float) $day['sick_hours'];
+            $vacation += (float) $day['vacation_hours'];
+            $payable += (float) $day['payable_hours'];
         }
 
-        $allDatesStmt = $pdo->prepare('SELECT DISTINCT DATE(timestamp) AS day FROM attendance_events WHERE employee_id = ? ORDER BY day ASC');
-        $allDatesStmt->execute([$empId]);
-        $allDates = $allDatesStmt->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($allDates as $dateIso) {
-            $cumulative += jit_worked_hours_for_day($pdo, $empId, (string) $dateIso)['hours'] - jit_scheduled_hours_for_day($pdo, $empId, (string) $dateIso);
+        $rangeStmt = $pdo->prepare(
+            "SELECT MIN(first_day) AS first_day
+             FROM (
+               SELECT MIN(DATE(timestamp)) AS first_day FROM attendance_events WHERE employee_id = ?
+               UNION ALL
+               SELECT MIN(start_date) AS first_day FROM absences WHERE employee_id = ?
+               UNION ALL
+               SELECT MIN(start_date) AS first_day FROM vacation_requests WHERE employee_id = ? AND status = 'approved'
+             ) dates"
+        );
+        $rangeStmt->execute([$empId, $empId, $empId]);
+        $firstTrackedDay = (string) ($rangeStmt->fetchColumn() ?: $from);
+        foreach (jit_each_date($firstTrackedDay, $to) as $dateIso) {
+            $cumulative += (float) jit_payroll_breakdown_for_day($pdo, $empId, (string) $dateIso)['period_balance'];
         }
 
         $rows[] = [
@@ -69,7 +92,14 @@ try {
             'department_name' => (string) ($employee['department_name'] ?? ''),
             'scheduled_hours' => round($scheduled, 2),
             'worked_hours' => round($worked, 2),
-            'period_balance' => round($worked - $scheduled, 2),
+            'paid_absence_hours' => round($paidAbsence, 2),
+            'unpaid_absence_hours' => round($unpaidAbsence, 2),
+            'training_hours' => round($training, 2),
+            'authorized_paid_hours' => round($authorizedPaid, 2),
+            'sick_hours' => round($sick, 2),
+            'vacation_hours' => round($vacation, 2),
+            'payable_hours' => round($payable, 2),
+            'period_balance' => round($payable - $scheduled, 2),
             'cumulative_balance' => round($cumulative, 2),
         ];
     }

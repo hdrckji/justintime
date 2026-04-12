@@ -46,14 +46,13 @@ try {
     header('Content-Disposition: attachment; filename="payroll-export-' . $period . '.csv"');
 
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Periode', 'Date', 'Employe', 'Badge', 'Departement', 'Heures prevues', 'Heures travaillees', 'Solde jour', 'Premiere entree', 'Derniere sortie'], ';');
+    fputcsv($out, ['Periode', 'Date', 'Employe', 'Badge', 'Departement', 'Type jour', 'Code paie', 'Libelle', 'Heures prevues', 'Heures travaillees', 'Absences payees', 'Absences non payees', 'Formation', 'Heures payables', 'Solde jour', 'Premiere entree', 'Derniere sortie', 'Motif'], ';');
 
     foreach ($employees as $employee) {
         $empId = (int) $employee['id'];
         foreach ($dates as $dateIso) {
-            $scheduled = jit_scheduled_hours_for_day($pdo, $empId, $dateIso);
-            $worked = jit_worked_hours_for_day($pdo, $empId, $dateIso);
-            $balance = round(((float) $worked['hours']) - $scheduled, 2);
+            $day = jit_payroll_breakdown_for_day($pdo, $empId, $dateIso);
+            $absence = $day['absence'] ?? null;
 
             fputcsv($out, [
                 $period,
@@ -61,11 +60,19 @@ try {
                 $employee['employee_name'],
                 $employee['badge_id'],
                 $employee['department_name'],
-                number_format($scheduled, 2, '.', ''),
-                number_format((float) $worked['hours'], 2, '.', ''),
-                number_format($balance, 2, '.', ''),
-                $worked['first_in'] ?? '',
-                $worked['last_out'] ?? '',
+                $day['day_type'],
+                $day['export_code'],
+                $day['day_label'],
+                number_format((float) $day['scheduled_hours'], 2, '.', ''),
+                number_format((float) $day['worked_hours'], 2, '.', ''),
+                number_format((float) $day['paid_absence_hours'], 2, '.', ''),
+                number_format((float) $day['unpaid_absence_hours'], 2, '.', ''),
+                number_format((float) $day['training_hours'], 2, '.', ''),
+                number_format((float) $day['payable_hours'], 2, '.', ''),
+                number_format((float) $day['period_balance'], 2, '.', ''),
+                $day['first_in'] ?? '',
+                $day['last_out'] ?? '',
+                $absence['reason'] ?? '',
             ], ';');
         }
     }

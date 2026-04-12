@@ -495,9 +495,11 @@ $user = get_auth_user();
           <div class="form-group">
             <label for="abs-type">Type</label>
             <select id="abs-type" required>
-              <option value="sick">Malade (Certificat)</option>
-              <option value="vacation">Conge</option>
-              <option value="other">Autre</option>
+              <option value="sick_paid">Maladie payee</option>
+              <option value="vacation_paid">Conge paye</option>
+              <option value="training_paid">Formation</option>
+              <option value="authorized_paid">Absence autorisee payee</option>
+              <option value="unpaid_leave">Absence non payee</option>
             </select>
           </div>
           <div class="form-group">
@@ -513,6 +515,7 @@ $user = get_auth_user();
           <label for="abs-reason">Motif (optionnel)</label>
           <textarea id="abs-reason" placeholder="Certificat medical, etc."></textarea>
         </div>
+        <p style="margin:0 0 0.8rem; color: var(--ink-soft); font-size:0.88rem;">La valorisation paie sera appliquee automatiquement selon le type choisi.</p>
         <button type="submit" class="btn-in">Ajouter absence</button>
       </form>
 
@@ -652,7 +655,7 @@ $user = get_auth_user();
 
     <div id="payroll" class="tab-content panel">
       <h2>Paie, heures et cloture</h2>
-      <p style="color: var(--ink-soft); margin-top: 0;">Exporte la paie, consulte la banque d'heures et verrouille les periodes finalisees.</p>
+      <p style="color: var(--ink-soft); margin-top: 0;">Exporte la paie, consulte les heures payables, les absences valorisees et verrouille les periodes finalisees.</p>
 
       <div class="admin-top-grid">
         <div class="form-group">
@@ -674,7 +677,7 @@ $user = get_auth_user();
       </div>
 
       <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin: 0.8rem 0 1rem;">
-        <button type="button" id="btn-payroll-export" class="btn-edit">⬇️ Export CSV paie</button>
+        <button type="button" id="btn-payroll-export" class="btn-edit">⬇️ Export comptable CSV</button>
         <button type="button" id="btn-payroll-close" class="btn-delete">🔒 Cloturer la periode</button>
         <button type="button" id="btn-payroll-reopen" class="btn-access">🔓 Reouvrir la periode</button>
         <button type="button" id="btn-payroll-refresh" class="btn-in">↺ Actualiser</button>
@@ -1220,9 +1223,10 @@ $user = get_auth_user();
         const data = await api('api/absences.php?action=list');
         els.absencesList.innerHTML = data.absences.map(a => `
           <div style="padding: 0.8rem; border: 1px solid var(--line); margin-bottom: 0.5rem; border-radius: 8px;">
-            <strong>${a.employee_name}</strong> - ${a.type}<br/>
+            <strong>${escapeHtml(a.employee_name)}</strong> - ${escapeHtml(a.type_label || a.type)}<br/>
             <small>${a.start_date} au ${a.end_date}</small><br/>
-            ${a.reason ? '<em>' + a.reason + '</em>' : ''}
+            <small style="color:${a.is_paid ? 'var(--ok)' : 'var(--warn)'};">Code paie: ${escapeHtml(a.export_code || '')} ${a.is_paid ? '• paye' : '• non paye'}</small><br/>
+            ${a.reason ? '<em>' + escapeHtml(a.reason) + '</em>' : ''}
             <button class="btn-delete" onclick="deleteAbsence(${a.id})" style="float: right;">Supprimer</button>
           </div>
         `).join('');
@@ -1245,7 +1249,7 @@ $user = get_auth_user();
           method: 'POST',
           body: JSON.stringify({
             employee_id: els.absEmployee.value,
-            type: els.absType.value,
+            payroll_code: els.absType.value,
             start_date: els.absStart.value,
             end_date: els.absEnd.value,
             reason: els.absReason.value,
@@ -1712,9 +1716,23 @@ $user = get_auth_user();
         const overtimeRows = overtimeData.rows || [];
         const totalPeriod = overtimeRows.reduce((acc, row) => acc + Number(row.period_balance || 0), 0);
         const totalCumulative = overtimeRows.reduce((acc, row) => acc + Number(row.cumulative_balance || 0), 0);
-        const positiveCount = overtimeRows.filter(row => Number(row.period_balance || 0) > 0).length;
+        const totalPayable = overtimeRows.reduce((acc, row) => acc + Number(row.payable_hours || 0), 0);
+        const totalPaidAbsence = overtimeRows.reduce((acc, row) => acc + Number(row.paid_absence_hours || 0), 0);
+        const totalUnpaidAbsence = overtimeRows.reduce((acc, row) => acc + Number(row.unpaid_absence_hours || 0), 0);
 
         els.payrollOvertimeSummary.innerHTML = `
+          <div class="hours-balance-card">
+            <p>Heures payables</p>
+            <strong>${formatHours(totalPayable)} h</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Absences payees</p>
+            <strong>${formatHours(totalPaidAbsence)} h</strong>
+          </div>
+          <div class="hours-balance-card">
+            <p>Absences non payees</p>
+            <strong>${formatHours(totalUnpaidAbsence)} h</strong>
+          </div>
           <div class="hours-balance-card">
             <p>Solde periode</p>
             <strong>${formatHours(totalPeriod)} h</strong>
@@ -1722,10 +1740,6 @@ $user = get_auth_user();
           <div class="hours-balance-card">
             <p>Banque d'heures cumulée</p>
             <strong>${formatHours(totalCumulative)} h</strong>
-          </div>
-          <div class="hours-balance-card">
-            <p>Collaborateurs en positif</p>
-            <strong>${positiveCount}</strong>
           </div>
           <div class="hours-balance-card">
             <p>Periode</p>
@@ -1741,6 +1755,9 @@ $user = get_auth_user();
                 <th>Departement</th>
                 <th>Prevu</th>
                 <th>Travaille</th>
+                <th>Abs. payees</th>
+                <th>Abs. non payees</th>
+                <th>Heures payables</th>
                 <th>Solde periode</th>
                 <th>Banque cumulée</th>
               </tr>
@@ -1752,6 +1769,9 @@ $user = get_auth_user();
                   <td>${escapeHtml(row.department_name || '-')}</td>
                   <td>${formatHours(row.scheduled_hours)} h</td>
                   <td>${formatHours(row.worked_hours)} h</td>
+                  <td>${formatHours(row.paid_absence_hours)} h</td>
+                  <td>${formatHours(row.unpaid_absence_hours)} h</td>
+                  <td>${formatHours(row.payable_hours)} h</td>
                   <td class="${Number(row.period_balance) >= 0 ? 'status-ok' : 'status-diff'}">${Number(row.period_balance) >= 0 ? '+' : ''}${formatHours(row.period_balance)} h</td>
                   <td class="${Number(row.cumulative_balance) >= 0 ? 'status-ok' : 'status-diff'}">${Number(row.cumulative_balance) >= 0 ? '+' : ''}${formatHours(row.cumulative_balance)} h</td>
                 </tr>
