@@ -14,6 +14,57 @@ if ($user['role'] === 'employee') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JustInTime | Tableau de bord</title>
     <link rel="stylesheet" href="static/css/styles.css" />
+    <style>
+      .dashboard-layout .panel-manual {
+        grid-column: span 12;
+      }
+
+      .dashboard-layout .manual-grid {
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) auto;
+        gap: 0.9rem;
+        align-items: end;
+      }
+
+      .dashboard-layout .manual-grid label {
+        margin: 0;
+        font-weight: 600;
+        color: var(--ink-soft);
+      }
+
+      .dashboard-layout .manual-grid select {
+        margin-top: 0.35rem;
+      }
+
+      .dashboard-layout .stats {
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      }
+
+      .dashboard-layout .stat-card {
+        min-height: 110px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .dashboard-layout .stat-card.pending strong {
+        color: #fbbf24;
+      }
+
+      .dashboard-layout .panel[aria-labelledby="team-title"] {
+        margin-top: 0.2rem;
+      }
+
+      @media (max-width: 700px) {
+        .dashboard-layout .manual-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .dashboard-layout .manual-grid .actions {
+          width: 100%;
+        }
+      }
+    </style>
   </head>
   <body>
     <div class="page-bg" aria-hidden="true"></div>
@@ -32,7 +83,7 @@ if ($user['role'] === 'employee') {
       </div>
     </nav>
 
-    <main class="layout">
+    <main class="layout dashboard-layout">
       <header class="hero">
         <p class="kicker">PME - 20 collaborateurs</p>
         <h1>Tableau de bord</h1>
@@ -68,7 +119,7 @@ if ($user['role'] === 'employee') {
           <p>Evenements aujourd'hui</p>
           <strong id="stat-events">0</strong>
         </article>
-        <article class="stat-card">
+        <article class="stat-card pending">
           <p>Corrections a traiter</p>
           <strong id="stat-corrections">0</strong>
         </article>
