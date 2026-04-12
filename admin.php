@@ -383,23 +383,23 @@ $user = get_auth_user();
             <input id="emp-lat" type="hidden" />
             <input id="emp-lng" type="hidden" />
           </div>
-          <div class="form-group" style="margin: 0; grid-column: span 2;">
-            <label style="display:flex; align-items:center; gap:0.45rem; font-weight:600;">
-              <input id="emp-telework-enabled" type="checkbox" />
-              Autoriser le teletravail
-            </label>
-            <small style="color: var(--ink-soft); display:block; margin-top:0.25rem;">
-              Si active, vous pouvez ajouter des adresses supplementaires de pointage (en plus de l'adresse principale).
-            </small>
-          </div>
-          <div id="emp-allowed-locations-wrap" class="form-group" style="margin: 0; grid-column: span 2; display:none;">
-            <label>Adresses autorisees (autres que l'adresse principale)</label>
-            <div id="emp-allowed-locations-list" style="display:grid; gap:0.5rem;"></div>
-            <button type="button" id="btn-add-allowed-location" class="btn-edit" style="margin-top:0.6rem;">+ Ajouter une adresse autorisee</button>
-          </div>
           <div class="form-group" style="margin: 0;">
             <label for="emp-vacation-days">Jours de conges/an</label>
             <input id="emp-vacation-days" type="number" min="0" max="60" value="25" />
+          </div>
+          <div class="form-group" style="margin: 0; grid-column: span 2; border:1px solid var(--line); border-radius:10px; padding:0.75rem 0.8rem; background: var(--surface-2);">
+            <label style="display:flex; align-items:center; gap:0.45rem; font-weight:600; margin:0;">
+              <input id="emp-telework-enabled" type="checkbox" />
+              Autoriser le teletravail
+            </label>
+            <small style="color: var(--ink-soft); display:block; margin-top:0.3rem;">
+              Ajoutez ici les adresses autorisees en plus de l'adresse principale.
+            </small>
+            <div id="emp-allowed-locations-wrap" style="margin-top:0.65rem; display:none;">
+              <label style="margin-bottom:0.35rem;">Adresses autorisees (autres que l'adresse principale)</label>
+              <div id="emp-allowed-locations-list" style="display:grid; gap:0.5rem;"></div>
+              <button type="button" id="btn-add-allowed-location" class="btn-edit" style="margin-top:0.6rem;">+ Ajouter une adresse autorisee</button>
+            </div>
           </div>
         </div>
         <button type="submit" class="btn-in" style="margin-top: 1rem;">Enregistrer</button>
