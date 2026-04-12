@@ -247,31 +247,68 @@ try {
         }
 
         if ($mode === 'reference') {
-            $start = (string) ($payload['start_time'] ?? '');
-            $end = (string) ($payload['end_time'] ?? '');
-            $days = $payload['days'] ?? [1, 2, 3, 4, 5];
+            $referenceDays = is_array($payload['reference_days'] ?? null)
+                ? $payload['reference_days']
+                : [];
 
-            if (!preg_match('/^\d{2}:\d{2}$/', $start) || !preg_match('/^\d{2}:\d{2}$/', $end)) {
-                json_response(['error' => 'Heure de debut/fin invalide (HH:MM).'], 400);
-                exit;
-            }
+            if ($referenceDays) {
+                foreach ($referenceDays as $entry) {
+                    if (!is_array($entry)) {
+                        continue;
+                    }
 
-            [$sh, $sm] = array_map('intval', explode(':', $start));
-            [$eh, $em] = array_map('intval', explode(':', $end));
-            $startMins = $sh * 60 + $sm;
-            $endMins = $eh * 60 + $em;
-            if ($endMins <= $startMins) {
-                json_response(['error' => 'L\'heure de fin doit etre apres l\'heure de debut.'], 400);
-                exit;
-            }
-            $hours = round(($endMins - $startMins) / 60, 2);
+                    $d = (int) ($entry['day'] ?? -1);
+                    $start = (string) ($entry['start_time'] ?? '');
+                    $end = (string) ($entry['end_time'] ?? '');
 
-            foreach ($days as $day) {
-                $d = (int) $day;
-                if ($d < 0 || $d > 6) {
-                    continue;
+                    if ($d < 0 || $d > 6) {
+                        continue;
+                    }
+                    if (!preg_match('/^\d{2}:\d{2}$/', $start) || !preg_match('/^\d{2}:\d{2}$/', $end)) {
+                        json_response(['error' => 'Heure de debut/fin invalide (HH:MM).'], 400);
+                        exit;
+                    }
+
+                    [$sh, $sm] = array_map('intval', explode(':', $start));
+                    [$eh, $em] = array_map('intval', explode(':', $end));
+                    $startMins = $sh * 60 + $sm;
+                    $endMins = $eh * 60 + $em;
+                    if ($endMins <= $startMins) {
+                        json_response(['error' => 'L\'heure de fin doit etre apres l\'heure de debut.'], 400);
+                        exit;
+                    }
+
+                    $hours = round(($endMins - $startMins) / 60, 2);
+                    $rowsToInsert[] = [$d, $hours, $start . ':00', $end . ':00', 'reference'];
                 }
-                $rowsToInsert[] = [$d, $hours, $start . ':00', $end . ':00', 'reference'];
+            } else {
+                // Compatibilite ascendante: ancien format start/end + days
+                $start = (string) ($payload['start_time'] ?? '');
+                $end = (string) ($payload['end_time'] ?? '');
+                $days = $payload['days'] ?? [1, 2, 3, 4, 5];
+
+                if (!preg_match('/^\d{2}:\d{2}$/', $start) || !preg_match('/^\d{2}:\d{2}$/', $end)) {
+                    json_response(['error' => 'Heure de debut/fin invalide (HH:MM).'], 400);
+                    exit;
+                }
+
+                [$sh, $sm] = array_map('intval', explode(':', $start));
+                [$eh, $em] = array_map('intval', explode(':', $end));
+                $startMins = $sh * 60 + $sm;
+                $endMins = $eh * 60 + $em;
+                if ($endMins <= $startMins) {
+                    json_response(['error' => 'L\'heure de fin doit etre apres l\'heure de debut.'], 400);
+                    exit;
+                }
+                $hours = round(($endMins - $startMins) / 60, 2);
+
+                foreach ($days as $day) {
+                    $d = (int) $day;
+                    if ($d < 0 || $d > 6) {
+                        continue;
+                    }
+                    $rowsToInsert[] = [$d, $hours, $start . ':00', $end . ':00', 'reference'];
+                }
             }
         }
 

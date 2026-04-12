@@ -40,8 +40,10 @@ try {
     $has_lat   = has_col($emp_cols, 'latitude');
     $has_lng   = has_col($emp_cols, 'longitude');
     $has_geo   = has_col($emp_cols, 'geo_radius');
+    $has_telework = has_col($emp_cols, 'telework_enabled');
     $has_vac   = has_col($emp_cols, 'vacation_days');
     $has_department = has_col($emp_cols, 'department_id') && table_exists($pdo, 'departments');
+    $has_allowed_locations = table_exists($pdo, 'employee_allowed_locations');
     $has_user_employee_id = has_col($usr_cols, 'employee_id');
 
     if ($action === 'list' && $_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -61,6 +63,7 @@ try {
         $lat_expr     = $has_lat ? "e.latitude" : "NULL AS latitude";
         $lng_expr     = $has_lng ? "e.longitude" : "NULL AS longitude";
         $geo_expr     = $has_geo ? "COALESCE(e.geo_radius, 200) AS geo_radius" : "200 AS geo_radius";
+        $telework_expr = $has_telework ? 'COALESCE(e.telework_enabled, 0) AS telework_enabled' : '0 AS telework_enabled';
         $vac_expr     = $has_vac ? "COALESCE(e.vacation_days, 25) AS vacation_days" : "25 AS vacation_days";
         $department_id_expr = $has_department ? "e.department_id" : "NULL AS department_id";
         $department_name_expr = $has_department ? "COALESCE(d.name, '') AS department_name" : "'' AS department_name";
@@ -80,6 +83,7 @@ try {
                 {$lat_expr},
                 {$lng_expr},
                 {$geo_expr},
+                {$telework_expr},
                 {$vac_expr},
                 {$department_id_expr},
                 {$department_name_expr},
@@ -90,6 +94,50 @@ try {
              ORDER BY {$order_by}";
 
         $employees = $pdo->query($sql)->fetchAll();
+
+        if ($has_allowed_locations && $employees) {
+            $ids = array_map(static fn ($e) => (int) ($e['id'] ?? 0), $employees);
+            $ids = array_values(array_filter($ids, static fn ($id) => $id > 0));
+
+            if ($ids) {
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $stmt = $pdo->prepare(
+                    "SELECT employee_id, address, latitude, longitude
+                     FROM employee_allowed_locations
+                     WHERE employee_id IN ($placeholders)
+                     ORDER BY id ASC"
+                );
+                $stmt->execute($ids);
+                $rows = $stmt->fetchAll();
+
+                $byEmployee = [];
+                foreach ($rows as $row) {
+                    $empId = (int) ($row['employee_id'] ?? 0);
+                    if ($empId <= 0) {
+                        continue;
+                    }
+                    $byEmployee[$empId][] = [
+                        'address' => (string) ($row['address'] ?? ''),
+                        'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
+                        'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
+                    ];
+                }
+
+                foreach ($employees as &$employee) {
+                    $empId = (int) ($employee['id'] ?? 0);
+                    $employee['allowed_locations'] = $byEmployee[$empId] ?? [];
+                }
+                unset($employee);
+            }
+        }
+
+        foreach ($employees as &$employee) {
+            if (!isset($employee['allowed_locations']) || !is_array($employee['allowed_locations'])) {
+                $employee['allowed_locations'] = [];
+            }
+        }
+        unset($employee);
+
         json_response(['employees' => $employees]);
         exit;
     }
@@ -119,7 +167,7 @@ try {
                     $stmt->execute([$id]);
                 }
 
-                foreach (['attendance_events', 'absences', 'scheduled_hours', 'vacation_requests'] as $table) {
+                foreach (['attendance_events', 'absences', 'scheduled_hours', 'vacation_requests', 'employee_allowed_locations'] as $table) {
                     if (!table_exists($pdo, $table)) {
                         continue;
                     }
@@ -194,6 +242,10 @@ try {
         $latitude  = isset($payload['latitude'])  && $payload['latitude']  !== '' ? (float) $payload['latitude']  : null;
         $longitude = isset($payload['longitude']) && $payload['longitude'] !== '' ? (float) $payload['longitude'] : null;
         $geo_radius = (int) ($payload['geo_radius']    ?? 200);
+        $telework_enabled = !empty($payload['telework_enabled']) ? 1 : 0;
+        $allowed_locations = is_array($payload['allowed_locations'] ?? null)
+            ? $payload['allowed_locations']
+            : [];
         $vac_days   = (int) ($payload['vacation_days'] ?? 25);
         $department_id = isset($payload['department_id']) && (int) $payload['department_id'] > 0
             ? (int) $payload['department_id']
@@ -251,6 +303,10 @@ try {
                 $set[] = 'geo_radius = ?';
                 $vals[] = $geo_radius;
             }
+            if ($has_telework) {
+                $set[] = 'telework_enabled = ?';
+                $vals[] = $telework_enabled;
+            }
             if ($has_vac) {
                 $set[] = 'vacation_days = ?';
                 $vals[] = $vac_days;
@@ -263,6 +319,7 @@ try {
             $vals[] = $id;
             $stmt = $pdo->prepare('UPDATE employees SET ' . implode(', ', $set) . ' WHERE id = ?');
             $stmt->execute($vals);
+            $employeeId = (int) $id;
         } else {
             $cols = [];
             $vals = [];
@@ -312,6 +369,11 @@ try {
                 $vals[] = $geo_radius;
                 $phs[] = '?';
             }
+            if ($has_telework) {
+                $cols[] = 'telework_enabled';
+                $vals[] = $telework_enabled;
+                $phs[] = '?';
+            }
             if ($has_vac) {
                 $cols[] = 'vacation_days';
                 $vals[] = $vac_days;
@@ -327,6 +389,38 @@ try {
                 'INSERT INTO employees (' . implode(', ', $cols) . ') VALUES (' . implode(', ', $phs) . ')'
             );
             $stmt->execute($vals);
+            $employeeId = (int) $pdo->lastInsertId();
+        }
+
+        if ($has_allowed_locations && isset($employeeId) && $employeeId > 0) {
+            $delete = $pdo->prepare('DELETE FROM employee_allowed_locations WHERE employee_id = ?');
+            $delete->execute([$employeeId]);
+
+            if ($telework_enabled === 1) {
+                $insert = $pdo->prepare(
+                    'INSERT INTO employee_allowed_locations (employee_id, address, latitude, longitude)
+                     VALUES (?, ?, ?, ?)'
+                );
+
+                foreach ($allowed_locations as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $locationAddress = trim((string) ($row['address'] ?? ''));
+                    if ($locationAddress === '') {
+                        continue;
+                    }
+
+                    $locationLat = isset($row['latitude']) && $row['latitude'] !== ''
+                        ? (float) $row['latitude']
+                        : null;
+                    $locationLng = isset($row['longitude']) && $row['longitude'] !== ''
+                        ? (float) $row['longitude']
+                        : null;
+
+                    $insert->execute([$employeeId, $locationAddress, $locationLat, $locationLng]);
+                }
+            }
         }
 
         json_response(['message' => 'Employe enregistre.']);

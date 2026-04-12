@@ -378,10 +378,24 @@ $user = get_auth_user();
         </div>
         <div class="form-grid-auto" style="margin-top: 0.5rem;">
           <div class="form-group" style="margin: 0; grid-column: span 2;">
-            <label for="emp-address">Adresse (lieu de travail)</label>
+            <label for="emp-address">Adresse</label>
             <input id="emp-address" type="text" placeholder="Ex: 12 rue de la Paix, Paris" style="width:100%;" />
             <input id="emp-lat" type="hidden" />
             <input id="emp-lng" type="hidden" />
+          </div>
+          <div class="form-group" style="margin: 0; grid-column: span 2;">
+            <label style="display:flex; align-items:center; gap:0.45rem; font-weight:600;">
+              <input id="emp-telework-enabled" type="checkbox" />
+              Autoriser le teletravail
+            </label>
+            <small style="color: var(--ink-soft); display:block; margin-top:0.25rem;">
+              Si active, vous pouvez ajouter des adresses supplementaires de pointage (en plus de l'adresse principale).
+            </small>
+          </div>
+          <div id="emp-allowed-locations-wrap" class="form-group" style="margin: 0; grid-column: span 2; display:none;">
+            <label>Adresses autorisees (autres que l'adresse principale)</label>
+            <div id="emp-allowed-locations-list" style="display:grid; gap:0.5rem;"></div>
+            <button type="button" id="btn-add-allowed-location" class="btn-edit" style="margin-top:0.6rem;">+ Ajouter une adresse autorisee</button>
           </div>
           <div class="form-group" style="margin: 0;">
             <label for="emp-vacation-days">Jours de conges/an</label>
@@ -506,14 +520,6 @@ $user = get_auth_user();
       <div id="hours-reference" style="display:none; margin-top: 1rem; border:1px solid var(--line); border-radius: 10px; padding: 0.9rem;">
         <h3 style="margin-top:0; font-size:1rem;">Horaire de reference</h3>
         <div style="display:grid; gap:1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-          <div class="form-group" style="margin:0;">
-            <label for="ref-start">Heure de debut</label>
-            <input id="ref-start" type="time" value="08:00" />
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label for="ref-end">Heure de fin</label>
-            <input id="ref-end" type="time" value="17:00" />
-          </div>
           <div class="form-group" style="margin:0;" id="ref-recurrence-wrap">
             <label for="ref-recurrence-interval">Recurrence</label>
             <select id="ref-recurrence-interval">
@@ -530,16 +536,8 @@ $user = get_auth_user();
           </div>
         </div>
         <div class="form-group" style="margin-top: 0.8rem;">
-          <label>Jours concernes</label>
-          <div style="display:flex; gap:0.8rem; flex-wrap:wrap;">
-            <label><input type="checkbox" class="ref-day" value="1" checked /> Lun</label>
-            <label><input type="checkbox" class="ref-day" value="2" checked /> Mar</label>
-            <label><input type="checkbox" class="ref-day" value="3" checked /> Mer</label>
-            <label><input type="checkbox" class="ref-day" value="4" checked /> Jeu</label>
-            <label><input type="checkbox" class="ref-day" value="5" checked /> Ven</label>
-            <label><input type="checkbox" class="ref-day" value="6" /> Sam</label>
-            <label><input type="checkbox" class="ref-day" value="0" /> Dim</label>
-          </div>
+          <label>Encodage jour par jour</label>
+          <div id="hours-reference-grid" style="display:grid; gap:0.5rem;"></div>
         </div>
       </div>
 
@@ -716,6 +714,10 @@ $user = get_auth_user();
       empAddress:     document.getElementById('emp-address'),
       empLat:         document.getElementById('emp-lat'),
       empLng:         document.getElementById('emp-lng'),
+      empTeleworkEnabled: document.getElementById('emp-telework-enabled'),
+      empAllowedLocationsWrap: document.getElementById('emp-allowed-locations-wrap'),
+      empAllowedLocationsList: document.getElementById('emp-allowed-locations-list'),
+      btnAddAllowedLocation: document.getElementById('btn-add-allowed-location'),
       empVacDays:     document.getElementById('emp-vacation-days'),
       absenceForm: document.getElementById('absence-form'),
       absEmployee: document.getElementById('abs-employee'),
@@ -732,12 +734,11 @@ $user = get_auth_user();
       hoursReference: document.getElementById('hours-reference'),
       hoursDaily: document.getElementById('hours-daily'),
       hoursWeekly: document.getElementById('hours-weekly'),
-      refStart: document.getElementById('ref-start'),
-      refEnd: document.getElementById('ref-end'),
       refRecurrenceWrap: document.getElementById('ref-recurrence-wrap'),
       refRecurrenceInterval: document.getElementById('ref-recurrence-interval'),
       refRecurrenceSlotWrap: document.getElementById('ref-recurrence-slot-wrap'),
       refRecurrenceSlot: document.getElementById('ref-recurrence-slot'),
+      hoursReferenceGrid: document.getElementById('hours-reference-grid'),
       weeklyHoursTotal: document.getElementById('weekly-hours-total'),
       hoursGrid: document.getElementById('hours-grid'),
       btnSaveHours: document.getElementById('btn-save-hours'),
@@ -805,6 +806,56 @@ $user = get_auth_user();
     // Collaborateurs
     let empCache = [];
     let departmentsCache = [];
+
+    function toggleTeleworkLocationsVisibility() {
+      els.empAllowedLocationsWrap.style.display = els.empTeleworkEnabled.checked ? 'block' : 'none';
+    }
+
+    function addAllowedLocationRow(location = {}) {
+      const row = document.createElement('div');
+      row.className = 'allowed-location-row';
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = '1fr auto';
+      row.style.gap = '0.5rem';
+      row.style.alignItems = 'center';
+
+      const address = String(location.address || '');
+      const lat = location.latitude ?? '';
+      const lng = location.longitude ?? '';
+
+      row.innerHTML = `
+        <div>
+          <input type="text" class="allowed-location-address" placeholder="Ex: Avenue Louise 123, Bruxelles" value="${escapeHtml(address)}" style="width:100%;" />
+          <input type="hidden" class="allowed-location-lat" value="${lat}" />
+          <input type="hidden" class="allowed-location-lng" value="${lng}" />
+        </div>
+        <button type="button" class="btn-delete allowed-location-remove">Supprimer</button>
+      `;
+
+      row.querySelector('.allowed-location-remove').addEventListener('click', () => row.remove());
+      els.empAllowedLocationsList.appendChild(row);
+    }
+
+    function renderAllowedLocations(locations = []) {
+      els.empAllowedLocationsList.innerHTML = '';
+      if (Array.isArray(locations)) {
+        locations.forEach(loc => addAllowedLocationRow(loc));
+      }
+    }
+
+    function collectAllowedLocations() {
+      return Array.from(els.empAllowedLocationsList.querySelectorAll('.allowed-location-row')).map(row => {
+        const address = row.querySelector('.allowed-location-address')?.value?.trim() || '';
+        const latRaw = row.querySelector('.allowed-location-lat')?.value ?? '';
+        const lngRaw = row.querySelector('.allowed-location-lng')?.value ?? '';
+
+        return {
+          address,
+          latitude: latRaw !== '' ? Number(latRaw) : null,
+          longitude: lngRaw !== '' ? Number(lngRaw) : null,
+        };
+      }).filter(loc => loc.address !== '');
+    }
 
     function renderDepartmentOptions(preferredValue = '') {
       const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
@@ -891,6 +942,7 @@ $user = get_auth_user();
               <small>${e.badge_id}</small>
               ${e.department_name ? `<br/><span class="department-pill">🏷️ ${e.department_name}</span>` : '<br/><small style="color:var(--ink-soft)">Aucun departement</small>'}
               ${e.address ? `<br/><small style="color:var(--ink-soft)">📍 ${e.address}</small>` : ''}
+              ${Number(e.telework_enabled || 0) === 1 ? '<br/><small style="color:var(--ok)">🏠 Teletravail autorise</small>' : ''}
               <br/><small style="color:${e.login_username ? 'var(--ok)' : 'var(--warn)'}">
                 🔑 ${e.login_username ? e.login_username : "Pas d'acces"}
               </small>
@@ -948,6 +1000,9 @@ $user = get_auth_user();
       els.empAddress.value = emp.address || '';
       els.empLat.value     = emp.latitude ?? '';
       els.empLng.value     = emp.longitude ?? '';
+      els.empTeleworkEnabled.checked = Number(emp.telework_enabled || 0) === 1;
+      renderAllowedLocations(Array.isArray(emp.allowed_locations) ? emp.allowed_locations : []);
+      toggleTeleworkLocationsVisibility();
       els.empVacDays.value = emp.vacation_days || 25;
       document.getElementById('employees').scrollIntoView({ behavior: 'smooth' });
       els.empFirst.focus();
@@ -979,12 +1034,17 @@ $user = get_auth_user();
             latitude: els.empLat.value !== '' ? parseFloat(els.empLat.value) : null,
             longitude: els.empLng.value !== '' ? parseFloat(els.empLng.value) : null,
             geo_radius: 300,
+            telework_enabled: els.empTeleworkEnabled.checked ? 1 : 0,
+            allowed_locations: collectAllowedLocations(),
             vacation_days: parseInt(els.empVacDays.value, 10) || 25,
           }),
         });
         showToast('Collaborateur enregistre');
         els.empForm.reset();
         els.empDepartment.value = '';
+        els.empTeleworkEnabled.checked = false;
+        renderAllowedLocations([]);
+        toggleTeleworkLocationsVisibility();
         els.empVacDays.value = 25;
         await loadEmployees();
         await loadDepartments();
@@ -1092,6 +1152,27 @@ $user = get_auth_user();
           <div class="form-group">
             <label>${day}</label>
             <input type="number" data-day="${idx}" min="0" max="24" step="0.25" value="${Number.isFinite(val) ? val : 0}" />
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderReferenceHoursGrid(rows = []) {
+      const order = [1, 2, 3, 4, 5, 6, 0];
+      els.hoursReferenceGrid.innerHTML = order.map((day) => {
+        const existing = rows.find(h => Number(h.day_of_week) === day);
+        const checked = !!existing;
+        const start = existing?.start_time ? String(existing.start_time).slice(0, 5) : '08:00';
+        const end = existing?.end_time ? String(existing.end_time).slice(0, 5) : '17:00';
+
+        return `
+          <div style="display:grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr); gap:0.6rem; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0.5rem 0.6rem; background:var(--surface-2);">
+            <label style="display:flex; align-items:center; gap:0.45rem; margin:0; font-weight:600;">
+              <input type="checkbox" class="ref-day-enabled" data-day="${day}" ${checked ? 'checked' : ''} />
+              ${dayLabels[day]}
+            </label>
+            <input type="time" class="ref-day-start" data-day="${day}" value="${start}" />
+            <input type="time" class="ref-day-end" data-day="${day}" value="${end}" />
           </div>
         `;
       }).join('');
@@ -1502,11 +1583,10 @@ $user = get_auth_user();
 
     function applyHoursDataToForm(rows = []) {
       renderHoursGrid(rows);
+      renderReferenceHoursGrid(rows);
 
       if (!rows.length) {
         els.hoursMode.value = 'reference';
-        els.refStart.value = '08:00';
-        els.refEnd.value = '17:00';
         els.refRecurrenceInterval.value = '1';
         updateRecurrenceSlotOptions(1, 1);
         updateHoursModeVisibility();
@@ -1517,18 +1597,12 @@ $user = get_auth_user();
       els.hoursMode.value = mode;
 
       if (mode === 'reference') {
+        renderReferenceHoursGrid(rows);
         const first = rows.find(r => r.start_time && r.end_time) || rows[0];
-        if (first.start_time) els.refStart.value = first.start_time.slice(0, 5);
-        if (first.end_time) els.refEnd.value = first.end_time.slice(0, 5);
         const recurrenceInterval = Math.max(1, Math.min(3, Number(first.recurrence_interval) || 1));
         const recurrenceSlot = Math.max(1, Math.min(recurrenceInterval, Number(first.recurrence_slot) || 1));
         els.refRecurrenceInterval.value = String(recurrenceInterval);
         updateRecurrenceSlotOptions(recurrenceInterval, recurrenceSlot);
-
-        const selectedDays = new Set(rows.map(r => Number(r.day_of_week)));
-        document.querySelectorAll('.ref-day').forEach(cb => {
-          cb.checked = selectedDays.has(Number(cb.value));
-        });
       }
 
       if (mode === 'weekly') {
@@ -1547,6 +1621,7 @@ $user = get_auth_user();
       const empId = els.hoursEmployee.value;
       if (!empId) {
         renderHoursGrid([]);
+        renderReferenceHoursGrid([]);
         return;
       }
 
@@ -1636,14 +1711,41 @@ $user = get_auth_user();
       }
 
       if (mode === 'reference') {
-        const days = Array.from(document.querySelectorAll('.ref-day:checked')).map(cb => Number(cb.value));
-        if (!days.length) {
+        const referenceDays = [];
+        const enabledDays = Array.from(document.querySelectorAll('.ref-day-enabled:checked')).map(cb => Number(cb.dataset.day));
+        if (!enabledDays.length) {
           showToast('Selectionnez au moins un jour pour l\'horaire de reference.', true);
           return;
         }
-        payload.start_time = els.refStart.value;
-        payload.end_time = els.refEnd.value;
-        payload.days = days;
+
+        for (const day of enabledDays) {
+          const startInput = document.querySelector(`.ref-day-start[data-day="${day}"]`);
+          const endInput = document.querySelector(`.ref-day-end[data-day="${day}"]`);
+          const start = startInput ? startInput.value : '';
+          const end = endInput ? endInput.value : '';
+
+          if (!start || !end) {
+            showToast(`Complete l'heure debut/fin pour ${dayLabels[day]}.`, true);
+            return;
+          }
+
+          const [sh, sm] = start.split(':').map(Number);
+          const [eh, em] = end.split(':').map(Number);
+          const startMins = (sh * 60) + sm;
+          const endMins = (eh * 60) + em;
+          if (!Number.isFinite(startMins) || !Number.isFinite(endMins) || endMins <= startMins) {
+            showToast(`Plage invalide pour ${dayLabels[day]} (fin > debut).`, true);
+            return;
+          }
+
+          referenceDays.push({
+            day,
+            start_time: start,
+            end_time: end,
+          });
+        }
+
+        payload.reference_days = referenceDays;
 
         if (applyTo === 'default') {
           const recurrenceInterval = Math.max(1, Math.min(3, Number(els.refRecurrenceInterval.value) || 1));
@@ -1683,8 +1785,11 @@ $user = get_auth_user();
     updateHoursViewVisibility();
     showHoursSection('editor');
     renderHoursGrid([]);
+    renderReferenceHoursGrid([]);
+    renderAllowedLocations([]);
+    toggleTeleworkLocationsVisibility();
 
-    // Geocodage silencieux via Nominatim (declenchement auto au blur de l'adresse)
+    // Geocodage silencieux via Nominatim (declenchement auto au blur)
     async function silentGeocode(addr) {
       if (!addr) return;
       try {
@@ -1694,15 +1799,51 @@ $user = get_auth_user();
         );
         const data = await res.json();
         if (data.length) {
-          els.empLat.value = parseFloat(data[0].lat).toFixed(7);
-          els.empLng.value = parseFloat(data[0].lon).toFixed(7);
+          return {
+            latitude: parseFloat(data[0].lat).toFixed(7),
+            longitude: parseFloat(data[0].lon).toFixed(7),
+          };
         }
       } catch (_) { /* silencieux */ }
+      return null;
     }
     els.empAddress.addEventListener('blur', () => {
       const addr = els.empAddress.value.trim();
-      if (addr) silentGeocode(addr);
+      if (!addr) return;
+      silentGeocode(addr).then((geo) => {
+        if (!geo) return;
+        els.empLat.value = geo.latitude;
+        els.empLng.value = geo.longitude;
+      });
     });
+
+    els.empTeleworkEnabled.addEventListener('change', toggleTeleworkLocationsVisibility);
+    els.btnAddAllowedLocation.addEventListener('click', () => addAllowedLocationRow({}));
+
+    els.empAllowedLocationsList.addEventListener('blur', (ev) => {
+      const input = ev.target;
+      if (!input.classList.contains('allowed-location-address')) {
+        return;
+      }
+
+      const addr = input.value.trim();
+      if (!addr) {
+        return;
+      }
+
+      const row = input.closest('.allowed-location-row');
+      if (!row) {
+        return;
+      }
+
+      silentGeocode(addr).then((geo) => {
+        if (!geo) return;
+        const latEl = row.querySelector('.allowed-location-lat');
+        const lngEl = row.querySelector('.allowed-location-lng');
+        if (latEl) latEl.value = geo.latitude;
+        if (lngEl) lngEl.value = geo.longitude;
+      });
+    }, true);
 
     // Modal acces employe
     const accessModal = document.getElementById('access-modal');

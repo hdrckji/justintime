@@ -23,6 +23,7 @@ function get_pdo(): PDO
 
     ensure_department_schema($pdo);
     ensure_device_settings_schema($pdo);
+    ensure_telework_schema($pdo);
 
     return $pdo;
 }
@@ -131,6 +132,32 @@ function ensure_device_settings_schema(PDO $pdo): void
             config_key   VARCHAR(80) PRIMARY KEY,
             config_value TEXT NOT NULL,
             updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+}
+
+function ensure_telework_schema(PDO $pdo): void
+{
+    if (!jit_table_exists($pdo, 'employees')) {
+        return;
+    }
+
+    if (!jit_column_exists($pdo, 'employees', 'telework_enabled')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN telework_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER geo_radius");
+    }
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS employee_allowed_locations (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            employee_id INT NOT NULL,
+            address VARCHAR(255) NOT NULL,
+            latitude DECIMAL(10,7) DEFAULT NULL,
+            longitude DECIMAL(10,7) DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_allowed_locations_employee (employee_id),
+            CONSTRAINT fk_allowed_locations_employee
+                FOREIGN KEY (employee_id) REFERENCES employees(id)
+                ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 }

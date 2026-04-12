@@ -35,7 +35,7 @@ try {
     }
 
     // Récupérer les coordonnées enregistrées pour cet employé
-    $stmt = $pdo->prepare('SELECT latitude, longitude, geo_radius FROM employees WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT latitude, longitude, geo_radius, COALESCE(telework_enabled, 0) AS telework_enabled FROM employees WHERE id = ?');
     $stmt->execute([$emp_id]);
     $emp = $stmt->fetch();
 
@@ -49,18 +49,60 @@ try {
         exit;
     }
 
-    $distance = haversine_distance(
-        (float) $emp['latitude'],
-        (float) $emp['longitude'],
-        $lat,
-        $lng
-    );
+    $targets = [[
+        'label' => 'adresse principale',
+        'latitude' => (float) $emp['latitude'],
+        'longitude' => (float) $emp['longitude'],
+    ]];
+
+    if ((int) ($emp['telework_enabled'] ?? 0) === 1) {
+        $locStmt = $pdo->prepare(
+            'SELECT address, latitude, longitude
+             FROM employee_allowed_locations
+             WHERE employee_id = ?
+               AND latitude IS NOT NULL
+               AND longitude IS NOT NULL'
+        );
+        $locStmt->execute([$emp_id]);
+        $allowedRows = $locStmt->fetchAll();
+
+        foreach ($allowedRows as $row) {
+            $targets[] = [
+                'label' => (string) ($row['address'] ?? 'adresse autorisee'),
+                'latitude' => (float) $row['latitude'],
+                'longitude' => (float) $row['longitude'],
+            ];
+        }
+    }
+
+    $distance = null;
+    $closestLabel = 'adresse principale';
+    foreach ($targets as $target) {
+        $currentDistance = haversine_distance(
+            (float) $target['latitude'],
+            (float) $target['longitude'],
+            $lat,
+            $lng
+        );
+
+        if ($distance === null || $currentDistance < $distance) {
+            $distance = $currentDistance;
+            $closestLabel = (string) ($target['label'] ?? 'adresse autorisee');
+        }
+    }
+
+    if ($distance === null) {
+        json_response(['error' => 'Aucune adresse geolocalisee valide n\'est configuree pour votre compte.'], 403);
+        exit;
+    }
+
     $radius = (int) ($emp['geo_radius'] ?? 300);
 
     if ($distance > $radius) {
         json_response([
             'error'    => sprintf(
-                'Vous etes trop loin de votre lieu de travail (%.0f m, rayon autorise : %d m).',
+                'Vous etes trop loin d\'une zone autorisee (%s, %.0f m, rayon autorise : %d m).',
+                $closestLabel,
                 $distance,
                 $radius
             ),
