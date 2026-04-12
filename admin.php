@@ -816,10 +816,6 @@ $user = get_auth_user();
         </div>
         <button type="submit" class="btn-in" style="margin-top: 1rem;">Enregistrer la configuration pointeuse</button>
       </form>
-
-      <div class="device-settings-note">
-        Astuce: pour des badges en chaine, garde un cooldown court (1000-2000 ms). En environnement calme, tu peux augmenter pour eviter les doubles scans.
-      </div>
     </div>
 
     <section id="toast" class="toast" role="status" aria-live="polite"></section>
