@@ -2,6 +2,15 @@
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../db.php';
 
+function table_exists(PDO $pdo, string $table): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+    );
+    $stmt->execute([$table]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
 require_login();
 $auth = get_auth_user();
 if (($auth['role'] ?? '') === 'employee') {
@@ -27,24 +36,41 @@ try {
     $stmt->execute([$today]);
     $events_today = (int) $stmt->fetch()['count'];
 
-    $unavailableRows = $pdo->prepare(
-        "SELECT DISTINCT employee_id
-         FROM (
-             SELECT employee_id
+    $hasAbsences = table_exists($pdo, 'absences');
+    $hasVacationRequests = table_exists($pdo, 'vacation_requests');
+    $unavailableSqlParts = [];
+    $unavailableParams = [];
+
+    if ($hasAbsences) {
+        $unavailableSqlParts[] =
+            'SELECT employee_id
              FROM absences
-             WHERE start_date <= ? AND end_date >= ?
-             UNION
-             SELECT employee_id
+             WHERE start_date <= ? AND end_date >= ?';
+        $unavailableParams[] = $today;
+        $unavailableParams[] = $today;
+    }
+
+    if ($hasVacationRequests) {
+        $unavailableSqlParts[] =
+            "SELECT employee_id
              FROM vacation_requests
              WHERE status = 'approved'
                AND start_date <= ?
-               AND end_date >= ?
-         ) x"
-    );
-    $unavailableRows->execute([$today, $today, $today, $today]);
+               AND end_date >= ?";
+        $unavailableParams[] = $today;
+        $unavailableParams[] = $today;
+    }
+
     $unavailableToday = [];
-    foreach ($unavailableRows->fetchAll(PDO::FETCH_COLUMN) as $employeeId) {
-        $unavailableToday[(int) $employeeId] = true;
+
+    if ($unavailableSqlParts) {
+        $unavailableSql = 'SELECT DISTINCT employee_id FROM (' . implode(' UNION ', $unavailableSqlParts) . ') x';
+        $unavailableRows = $pdo->prepare($unavailableSql);
+        $unavailableRows->execute($unavailableParams);
+
+        foreach ($unavailableRows->fetchAll(PDO::FETCH_COLUMN) as $employeeId) {
+            $unavailableToday[(int) $employeeId] = true;
+        }
     }
 
     $latest = $pdo->query(
