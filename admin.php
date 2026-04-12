@@ -581,7 +581,7 @@ $user = get_auth_user();
         </div>
         <div class="form-group" style="margin-top: 0.8rem;">
           <label>Encodage jour par jour</label>
-          <div id="hours-reference-grid" style="display:grid; gap:0.5rem;"></div>
+          <div id="hours-reference-grid" style="display:flex; flex-direction:column; gap:0.5rem;"></div>
         </div>
       </div>
 
@@ -1302,8 +1302,8 @@ $user = get_auth_user();
         const end = existing?.end_time ? String(existing.end_time).slice(0, 5) : '17:00';
 
         return `
-          <div style="display:grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr); gap:0.6rem; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0.5rem 0.6rem; background:var(--surface-2);">
-            <label style="display:flex; align-items:center; gap:0.45rem; margin:0; font-weight:600;">
+          <div style="display:grid; grid-template-columns: 140px 1fr 1fr; gap:0.6rem; align-items:center; border:1px solid var(--line); border-radius:8px; padding:0.5rem 0.6rem; background:var(--surface-2);">
+            <label style="display:flex; align-items:center; gap:0.45rem; margin:0; font-weight:600; white-space:nowrap; overflow:hidden;">
               <input type="checkbox" class="ref-day-enabled" data-day="${day}" ${checked ? 'checked' : ''} />
               ${dayLabels[day]}
             </label>
