@@ -1183,7 +1183,8 @@ $user = get_auth_user();
       } catch (e) { showToast(e.message, true); }
     }
 
-    async function loadEmployees() {
+    async function loadEmployees(options = {}) {
+      const { refreshPanels = true } = options;
       try {
         const prevAbsValue = els.absEmployee.value;
         const prevHoursValue = els.hoursEmployee.value;
@@ -1246,11 +1247,13 @@ $user = get_auth_user();
           els.hoursViewDepartment.value = String(departmentsCache[0].id);
         }
 
-        loadHoursForSelected();
-        loadHoursVisual();
-        loadPayrollDashboard();
-        loadVacationBalanceSummary();
-        loadVacationRequests();
+        if (refreshPanels) {
+          loadHoursForSelected();
+          loadHoursVisual();
+          loadPayrollDashboard();
+          loadVacationBalanceSummary();
+          loadVacationRequests();
+        }
       } catch (e) { showToast(e.message, true); }
     }
 
@@ -1324,7 +1327,7 @@ $user = get_auth_user();
       try {
         await api('api/departments.php?action=delete&id=' + id, { method: 'POST' });
         showToast('Departement supprime');
-        await loadEmployees();
+        await loadEmployees({ refreshPanels: false });
         await loadDepartments();
       } catch (e) { showToast(e.message, true); }
     };
@@ -1344,7 +1347,7 @@ $user = get_auth_user();
         });
         showToast('Departement ajoute');
         els.departmentForm.reset();
-        await loadEmployees();
+        await loadEmployees({ refreshPanels: false });
         await loadDepartments();
       } catch (e) { showToast(e.message, true); }
     });
@@ -2054,9 +2057,11 @@ $user = get_auth_user();
       renderReferenceHoursGrid(rows);
 
       if (!rows.length) {
-        els.hoursMode.value = 'reference';
-        els.refRecurrenceInterval.value = '1';
-        updateRecurrenceSlotOptions(1, 1);
+        const mode = els.hoursMode.value || 'reference';
+        const recurrenceInterval = Math.max(1, Math.min(3, Number(els.refRecurrenceInterval.value) || 1));
+        const recurrenceSlot = Math.max(1, Math.min(recurrenceInterval, Number(els.refRecurrenceSlot.value) || 1));
+        els.hoursMode.value = mode;
+        updateRecurrenceSlotOptions(recurrenceInterval, recurrenceSlot);
         updateHoursModeVisibility();
         calcAndRenderHoursSummary();
         return;
