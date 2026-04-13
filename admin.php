@@ -618,6 +618,23 @@ $user = get_auth_user();
           </div>
         </div>
       </div>
+        <div id="hours-summary" style="margin-top: 1.5rem; padding: 1.2rem; background: var(--surface-2); border-radius: 10px; border-left: 4px solid var(--accent); display:none;">
+          <h3 style="margin-top:0; font-size:0.95rem; color: var(--accent);">📊 Récapitulatif horaire</h3>
+          <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 0.8rem;">
+            <div>
+              <strong style="color: var(--text-muted);">Total heures</strong>
+              <div id="hours-summary-total" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0 h</div>
+            </div>
+            <div>
+              <strong style="color: var(--text-muted);">Jours travaillés</strong>
+              <div id="hours-summary-workdays" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0</div>
+            </div>
+            <div>
+              <strong style="color: var(--text-muted);">Moyenne par jour</strong>
+              <div id="hours-summary-avg" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0 h</div>
+            </div>
+          </div>
+        </div>
       <button id="btn-save-hours" class="btn-in" style="margin-top: 1rem;">Enregistrer horaires</button>
       </div>
 
@@ -873,6 +890,10 @@ $user = get_auth_user();
       hoursShowVisual: document.getElementById('hours-show-visual'),
       hoursEditorBlock: document.getElementById('hours-editor-block'),
       hoursVisualBlock: document.getElementById('hours-visual-block'),
+      hoursSummary: document.getElementById('hours-summary'),
+      hoursSummaryTotal: document.getElementById('hours-summary-total'),
+      hoursSummaryWorkdays: document.getElementById('hours-summary-workdays'),
+      hoursSummaryAvg: document.getElementById('hours-summary-avg'),
       hoursViewScope: document.getElementById('hours-view-scope'),
       hoursViewEmployeeWrap: document.getElementById('hours-view-employee-wrap'),
       hoursViewEmployee: document.getElementById('hours-view-employee'),
@@ -947,6 +968,14 @@ $user = get_auth_user();
       });
     });
 
+      // Rafraichir les options de responsable quand l'onglet Departments est visible
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.dataset.tab === 'departments') {
+          btn.addEventListener('click', () => {
+            setTimeout(() => renderDepartmentManagerOptions(), 100);
+          });
+        }
+      });
     // Collaborateurs
     let empCache = [];
     let departmentsCache = [];
@@ -1295,8 +1324,8 @@ $user = get_auth_user();
       try {
         await api('api/departments.php?action=delete&id=' + id, { method: 'POST' });
         showToast('Departement supprime');
-        await loadDepartments();
         await loadEmployees();
+        await loadDepartments();
       } catch (e) { showToast(e.message, true); }
     };
 
@@ -1315,8 +1344,8 @@ $user = get_auth_user();
         });
         showToast('Departement ajoute');
         els.departmentForm.reset();
-        await loadDepartments();
         await loadEmployees();
+        await loadDepartments();
       } catch (e) { showToast(e.message, true); }
     });
 
@@ -1414,6 +1443,8 @@ $user = get_auth_user();
           </div>
         `;
       }).join('');
+
+      calcAndRenderHoursSummary();
     }
 
     function renderReferenceHoursGrid(rows = []) {
@@ -1435,6 +1466,59 @@ $user = get_auth_user();
           </div>
         `;
       }).join('');
+
+      calcAndRenderHoursSummary();
+    }
+
+    function parseTimeToMinutes(value) {
+      if (!value || !String(value).includes(':')) return null;
+      const [h, m] = String(value).split(':').map(Number);
+      if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+      return (h * 60) + m;
+    }
+
+    function calcAndRenderHoursSummary() {
+      if (!els.hoursSummary || !els.hoursSummaryTotal || !els.hoursSummaryWorkdays || !els.hoursSummaryAvg) {
+        return;
+      }
+
+      const mode = els.hoursMode.value;
+      let totalHours = 0;
+      let workingDays = 0;
+
+      if (mode === 'daily') {
+        document.querySelectorAll('#hours-grid input[type="number"][data-day]').forEach((inp) => {
+          const h = Math.max(0, Number(inp.value) || 0);
+          if (h > 0) {
+            workingDays += 1;
+            totalHours += h;
+          }
+        });
+      } else if (mode === 'reference') {
+        const enabled = Array.from(document.querySelectorAll('.ref-day-enabled:checked'));
+        workingDays = enabled.length;
+
+        enabled.forEach((cb) => {
+          const day = cb.dataset.day;
+          const start = document.querySelector(`.ref-day-start[data-day="${day}"]`);
+          const end = document.querySelector(`.ref-day-end[data-day="${day}"]`);
+          const startMins = parseTimeToMinutes(start ? start.value : '');
+          const endMins = parseTimeToMinutes(end ? end.value : '');
+
+          if (startMins !== null && endMins !== null && endMins > startMins) {
+            totalHours += (endMins - startMins) / 60;
+          }
+        });
+      } else if (mode === 'weekly') {
+        totalHours = Math.max(0, Number(els.weeklyHoursTotal.value) || 0);
+        workingDays = document.querySelectorAll('.weekly-day:checked').length;
+      }
+
+      const avg = workingDays > 0 ? totalHours / workingDays : 0;
+      els.hoursSummary.style.display = 'block';
+      els.hoursSummaryTotal.textContent = `${totalHours.toFixed(2)} h`;
+      els.hoursSummaryWorkdays.textContent = String(workingDays);
+      els.hoursSummaryAvg.textContent = `${avg.toFixed(2)} h`;
     }
 
     function ensureHoursViewWeekDefault() {
@@ -1974,6 +2058,7 @@ $user = get_auth_user();
         els.refRecurrenceInterval.value = '1';
         updateRecurrenceSlotOptions(1, 1);
         updateHoursModeVisibility();
+        calcAndRenderHoursSummary();
         return;
       }
 
@@ -1999,6 +2084,7 @@ $user = get_auth_user();
       }
 
       updateHoursModeVisibility();
+      calcAndRenderHoursSummary();
     }
 
     async function loadHoursForSelected() {
@@ -2006,6 +2092,7 @@ $user = get_auth_user();
       if (!empId) {
         renderHoursGrid([]);
         renderReferenceHoursGrid([]);
+        calcAndRenderHoursSummary();
         return;
       }
 
@@ -2040,6 +2127,7 @@ $user = get_auth_user();
       loadHoursForSelected();
     });
     els.hoursMode.addEventListener('change', updateHoursModeVisibility);
+    els.hoursMode.addEventListener('change', calcAndRenderHoursSummary);
     els.refRecurrenceInterval.addEventListener('change', () => {
       const interval = Math.max(1, Math.min(3, Number(els.refRecurrenceInterval.value) || 1));
       updateRecurrenceSlotOptions(interval, 1);
@@ -2064,6 +2152,16 @@ $user = get_auth_user();
       } catch (e) {
         showToast(e.message, true);
       }
+    });
+
+    els.hoursGrid.addEventListener('input', calcAndRenderHoursSummary);
+    els.hoursGrid.addEventListener('change', calcAndRenderHoursSummary);
+    els.hoursReferenceGrid.addEventListener('input', calcAndRenderHoursSummary);
+    els.hoursReferenceGrid.addEventListener('change', calcAndRenderHoursSummary);
+    els.weeklyHoursTotal.addEventListener('input', calcAndRenderHoursSummary);
+    els.weeklyHoursTotal.addEventListener('change', calcAndRenderHoursSummary);
+    document.querySelectorAll('.weekly-day').forEach((cb) => {
+      cb.addEventListener('change', calcAndRenderHoursSummary);
     });
 
     els.payrollPeriod.addEventListener('change', loadPayrollDashboard);
@@ -2207,6 +2305,7 @@ $user = get_auth_user();
     showHoursSection('editor');
     renderHoursGrid([]);
     renderReferenceHoursGrid([]);
+    calcAndRenderHoursSummary();
     renderAllowedLocations([]);
     toggleTeleworkLocationsVisibility();
 
