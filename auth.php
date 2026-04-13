@@ -40,16 +40,35 @@ function get_auth_user(): ?array
     ];
 }
 
+function is_api_request(): bool
+{
+    $scriptName = (string) ($_SERVER['SCRIPT_NAME'] ?? '');
+    $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+    return str_contains($scriptName, '/api/') || str_contains($requestUri, '/api/');
+}
+
 function require_login(?string $required_role = null): void
 {
     if (!is_logged_in()) {
-        header('Location: login.php');
+        if (is_api_request()) {
+            http_response_code(401);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['error' => 'Session expirée. Reconnectez-vous.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        header('Location: /login.php');
         exit;
     }
 
     if ($required_role) {
         $user = get_auth_user();
         if ($user['role'] !== $required_role && $user['role'] !== 'admin') {
+            if (is_api_request()) {
+                http_response_code(403);
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['error' => 'Accès refusé.'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
             http_response_code(403);
             die('Acces refusee.');
         }
