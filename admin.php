@@ -556,6 +556,14 @@ $user = get_auth_user();
           <label for="hours-week-start">Semaine du (lundi)</label>
           <input id="hours-week-start" type="date" />
         </div>
+        <div class="form-group" id="hours-recurrence-wrap">
+          <label for="hours-recurrence">Recurrence (horaire de reference)</label>
+          <select id="hours-recurrence">
+            <option value="1">Chaque semaine</option>
+            <option value="2">Toutes les 2 semaines</option>
+            <option value="3">Toutes les 3 semaines</option>
+          </select>
+        </div>
       </div>
 
       <div class="admin-top-grid" style="margin-top: 0.5rem;">
@@ -857,6 +865,8 @@ $user = get_auth_user();
       hoursApplyTo: document.getElementById('hours-apply-to'),
       hoursWeekWrap: document.getElementById('hours-week-wrap'),
       hoursWeekStart: document.getElementById('hours-week-start'),
+      hoursRecurrence: document.getElementById('hours-recurrence'),
+      hoursRecurrenceWrap: document.getElementById('hours-recurrence-wrap'),
       hoursMode: document.getElementById('hours-mode'),
       hoursReference: document.getElementById('hours-reference'),
       hoursDaily: document.getElementById('hours-daily'),
@@ -2525,12 +2535,14 @@ $user = get_auth_user();
       }
     });
 
-    loadDepartments();
-    loadEmployees();
-    loadAbsences();
-    loadVacationRequests();
-    loadVacationBalanceSummary();
-    loadDeviceSettings();
+    (async () => {
+      await loadEmployees();
+      await loadDepartments();
+      await loadAbsences();
+      await loadVacationRequests();
+      await loadVacationBalanceSummary();
+      await loadDeviceSettings();
+    })();
   </script>
 </body>
 </html>
