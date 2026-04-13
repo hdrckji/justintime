@@ -14,3 +14,7 @@ data/attendance.db
 
 # Arduino / editor temp files
 *.tmp
+
+# Firmware / 3D assets (si tu ne veux pas les versionner)
+*.ino
+*.stl

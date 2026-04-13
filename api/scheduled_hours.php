@@ -2,7 +2,8 @@
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../db.php';
 
-require_login('admin');
+require_login();
+$auth = get_auth_user();
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -39,6 +40,17 @@ function employee_exists(PDO $pdo, int $employeeId): bool
     $stmt = $pdo->prepare('SELECT COUNT(*) FROM employees WHERE id = ?');
     $stmt->execute([$employeeId]);
     return (int) $stmt->fetchColumn() > 0;
+}
+
+function can_manage_target_employee(PDO $pdo, array $auth, int $employeeId): bool
+{
+    $role = (string) ($auth['role'] ?? '');
+    if (in_array($role, ['admin', 'hr'], true)) {
+        return true;
+    }
+
+    $managerEmployeeId = (int) ($auth['employee_id'] ?? 0);
+    return jit_can_manage_employee($pdo, $managerEmployeeId, $employeeId);
 }
 
 function scheduled_hours_fk_exists(PDO $pdo): bool
@@ -124,6 +136,10 @@ try {
             json_response(['error' => 'Collaborateur invalide.'], 400);
             exit;
         }
+        if (!can_manage_target_employee($pdo, $auth, $emp_id)) {
+            json_response(['error' => 'Acces refuse pour ce collaborateur.'], 403);
+            exit;
+        }
 
         $requestedWeek = trim((string) ($_GET['week_start'] ?? ''));
         $weekStart = $requestedWeek !== '' ? monday_of($requestedWeek) : null;
@@ -200,6 +216,10 @@ try {
         $emp_id = (int) ($payload['employee_id'] ?? 0);
         if ($emp_id <= 0 || !employee_exists($pdo, $emp_id)) {
             json_response(['error' => 'Collaborateur invalide.'], 400);
+            exit;
+        }
+        if (!can_manage_target_employee($pdo, $auth, $emp_id)) {
+            json_response(['error' => 'Acces refuse pour ce collaborateur.'], 403);
             exit;
         }
 

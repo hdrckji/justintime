@@ -100,9 +100,31 @@ function ensure_department_schema(PDO $pdo): void
         "CREATE TABLE IF NOT EXISTS departments (
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(100) NOT NULL UNIQUE,
+            manager_employee_id INT NULL DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    if (!jit_column_exists($pdo, 'departments', 'manager_employee_id')) {
+        $pdo->exec("ALTER TABLE departments ADD COLUMN manager_employee_id INT NULL DEFAULT NULL AFTER name");
+    }
+
+    if (!jit_index_exists($pdo, 'departments', 'idx_departments_manager')) {
+        $pdo->exec("ALTER TABLE departments ADD INDEX idx_departments_manager (manager_employee_id)");
+    }
+
+    if (!jit_foreign_key_exists($pdo, 'departments', 'fk_departments_manager_employee')) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE departments
+                 ADD CONSTRAINT fk_departments_manager_employee
+                 FOREIGN KEY (manager_employee_id) REFERENCES employees(id)
+                 ON DELETE SET NULL"
+            );
+        } catch (Throwable $e) {
+            // Ignorer si la contrainte existe deja sous un autre nom.
+        }
+    }
 
     if (!jit_column_exists($pdo, 'employees', 'department_id')) {
         $pdo->exec("ALTER TABLE employees ADD COLUMN department_id INT NULL DEFAULT NULL AFTER active");
@@ -124,6 +146,37 @@ function ensure_department_schema(PDO $pdo): void
             // Ignorer si la contrainte existe deja sous un autre nom.
         }
     }
+}
+
+function jit_get_managed_department_ids(PDO $pdo, int $managerEmployeeId): array
+{
+    if ($managerEmployeeId <= 0 || !jit_table_exists($pdo, 'departments') || !jit_column_exists($pdo, 'departments', 'manager_employee_id')) {
+        return [];
+    }
+
+    $stmt = $pdo->prepare('SELECT id FROM departments WHERE manager_employee_id = ? ORDER BY name ASC');
+    $stmt->execute([$managerEmployeeId]);
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+function jit_can_manage_employee(PDO $pdo, int $managerEmployeeId, int $targetEmployeeId): bool
+{
+    if ($managerEmployeeId <= 0 || $targetEmployeeId <= 0 || $managerEmployeeId === $targetEmployeeId) {
+        return false;
+    }
+
+    if (!jit_column_exists($pdo, 'employees', 'department_id')) {
+        return false;
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM employees e
+         JOIN departments d ON d.id = e.department_id
+         WHERE e.id = ? AND d.manager_employee_id = ?'
+    );
+    $stmt->execute([$targetEmployeeId, $managerEmployeeId]);
+    return (int) $stmt->fetchColumn() > 0;
 }
 
 function ensure_device_settings_schema(PDO $pdo): void

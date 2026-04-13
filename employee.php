@@ -125,6 +125,15 @@ if (!$auth['employee_id']) {
                         text-align: center; margin-bottom: 0.3rem; text-transform: uppercase; }
     .week-cell-date { font-size: 0.78rem; text-align: center; color: var(--ink-soft); margin-bottom: 0.4rem; }
     .week-cell-date.today-num { color: var(--accent); font-weight: 700; }
+    .manager-panel { border: 1px solid var(--line); border-radius: 12px; padding: 1rem; background: var(--surface-2); }
+    .manager-grid { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .manager-hours-row { display: grid; grid-template-columns: 1fr 120px; gap: 0.6rem; align-items: center; margin-bottom: 0.45rem; }
+    .manager-hours-row input { width: 100%; padding: 0.45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); }
+    .manager-vac-item { border: 1px solid var(--line); border-radius: 8px; padding: 0.8rem; margin-bottom: 0.6rem; }
+    .manager-vac-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.55rem; }
+    .manager-vac-actions button { border: 0; border-radius: 6px; padding: 0.45rem 0.75rem; cursor: pointer; }
+    .manager-vac-actions .approve { background: var(--ok); color: #0a0a0a; }
+    .manager-vac-actions .reject { background: var(--warn); color: #0a0a0a; }
   </style>
 </head>
 <body>
@@ -198,6 +207,29 @@ if (!$auth['employee_id']) {
       </form>
     </div>
 
+    <div class="panel" id="manager-panel" style="grid-column: span 12; display:none;">
+      <h2 style="margin-top:0;">🧭 Espace responsable d'equipe</h2>
+      <p id="manager-scope-text" style="color: var(--ink-soft); margin-top: 0;">Chargement du périmètre manager...</p>
+
+      <div class="manager-grid">
+        <div class="manager-panel">
+          <h3 style="margin-top:0;">🕒 Horaires des collaborateurs</h3>
+          <label for="manager-team-employee" style="display:block; margin-bottom:0.35rem;">Collaborateur</label>
+          <select id="manager-team-employee" style="width:100%; padding:0.55rem; border:1px solid var(--line); border-radius:6px; margin-bottom:0.7rem;"></select>
+          <div id="manager-hours-grid"></div>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.7rem;">
+            <button id="btn-manager-load-hours" style="padding:0.55rem 0.8rem; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink); cursor:pointer;">↺ Charger</button>
+            <button id="btn-manager-save-hours" style="padding:0.55rem 0.8rem; border:0; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer;">💾 Enregistrer</button>
+          </div>
+        </div>
+
+        <div class="manager-panel">
+          <h3 style="margin-top:0;">🏖️ Demandes de congé équipe</h3>
+          <div id="manager-vac-requests"><p style="color:var(--ink-soft);">Chargement...</p></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Calendrier des pointages -->
     <div class="panel" style="grid-column: span 12;">
       <h2 style="margin-top:0;">🗓️ Calendrier des pointages</h2>
@@ -268,6 +300,21 @@ if (!$auth['employee_id']) {
     }
 
     let nextEventType = 'in';
+    const managerState = {
+      isManager: false,
+      team: [],
+      departments: [],
+    };
+    const dayLabels = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
 
     function renderToday(events) {
       const badge = document.getElementById('status-badge');
@@ -315,10 +362,160 @@ if (!$auth['employee_id']) {
         renderToday(data.today);
         renderVacation(data.vacation);
         renderHistory(data.history);
+        renderManagerScope(data.manager_scope || {});
       } catch (e) {
         showToast(e.message, true);
       }
     }
+
+    function renderManagerScope(scope) {
+      managerState.isManager = !!scope.is_manager;
+      managerState.team = Array.isArray(scope.team) ? scope.team : [];
+      managerState.departments = Array.isArray(scope.departments) ? scope.departments : [];
+
+      const panel = document.getElementById('manager-panel');
+      const scopeText = document.getElementById('manager-scope-text');
+      if (!managerState.isManager) {
+        panel.style.display = 'none';
+        return;
+      }
+
+      panel.style.display = 'block';
+      const deptLabels = managerState.departments.map(d => d.name).join(', ');
+      scopeText.textContent = deptLabels
+        ? `Départements gérés: ${deptLabels}`
+        : 'Vous pouvez gérer les collaborateurs de votre périmètre.';
+
+      renderManagerTeamOptions();
+      loadManagerSchedule();
+      loadManagerVacationRequests();
+    }
+
+    function renderManagerTeamOptions() {
+      const sel = document.getElementById('manager-team-employee');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Choisir un collaborateur</option>' + managerState.team.map(emp => (
+        `<option value="${emp.id}">${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}${emp.department_name ? ` - ${escapeHtml(emp.department_name)}` : ''}</option>`
+      )).join('');
+
+      if (current && managerState.team.some(e => String(e.id) === String(current))) {
+        sel.value = current;
+      } else if (managerState.team.length) {
+        sel.value = String(managerState.team[0].id);
+      }
+    }
+
+    function renderManagerHoursGrid(rows = []) {
+      const byDay = new Map(rows.map(r => [Number(r.day_of_week), Number(r.hours || 0)]));
+      const container = document.getElementById('manager-hours-grid');
+      container.innerHTML = dayLabels.map((day, idx) => `
+        <div class="manager-hours-row">
+          <label>${day}</label>
+          <input type="number" min="0" max="24" step="0.25" data-day="${idx}" value="${Number(byDay.get(idx) || 0).toFixed(2)}" />
+        </div>
+      `).join('');
+    }
+
+    async function loadManagerSchedule() {
+      const employeeId = document.getElementById('manager-team-employee').value;
+      if (!employeeId) {
+        renderManagerHoursGrid([]);
+        return;
+      }
+
+      try {
+        const data = await apiCall('api/scheduled_hours.php?action=get&employee_id=' + encodeURIComponent(employeeId));
+        renderManagerHoursGrid(Array.isArray(data.hours) ? data.hours : []);
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    async function saveManagerSchedule() {
+      const employeeId = document.getElementById('manager-team-employee').value;
+      if (!employeeId) {
+        showToast('Choisis un collaborateur.', true);
+        return;
+      }
+
+      const hours = {};
+      document.querySelectorAll('#manager-hours-grid input[data-day]').forEach(input => {
+        const day = Number(input.dataset.day);
+        const val = parseFloat(input.value || '0') || 0;
+        hours[day] = val;
+      });
+
+      try {
+        await apiCall('api/scheduled_hours.php?action=save', {
+          method: 'POST',
+          body: JSON.stringify({
+            employee_id: Number(employeeId),
+            mode: 'daily',
+            apply_to: 'default',
+            hours,
+          }),
+        });
+        showToast('Horaires enregistrés.');
+        loadManagerSchedule();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    async function loadManagerVacationRequests() {
+      if (!managerState.isManager) {
+        return;
+      }
+
+      const container = document.getElementById('manager-vac-requests');
+      try {
+        const data = await apiCall('api/vacation_requests.php?action=list&status=pending');
+        const requests = Array.isArray(data.requests) ? data.requests : [];
+        if (!requests.length) {
+          container.innerHTML = '<p style="color:var(--ink-soft);">Aucune demande en attente.</p>';
+          return;
+        }
+
+        container.innerHTML = requests.map(req => {
+          const sd = new Date(req.start_date).toLocaleDateString('fr-FR');
+          const ed = new Date(req.end_date).toLocaleDateString('fr-FR');
+          return `<div class="manager-vac-item">
+            <strong>${escapeHtml(req.emp_first)} ${escapeHtml(req.emp_last)}</strong><br/>
+            <small>📅 ${sd} au ${ed}</small>
+            ${req.reason ? `<div style="margin-top:0.35rem; color:var(--ink-soft);">Motif: ${escapeHtml(req.reason)}</div>` : ''}
+            <div class="manager-vac-actions">
+              <button class="approve" onclick="managerReviewVacation(${req.id}, 'approved')">✓ Approuver</button>
+              <button class="reject" onclick="managerReviewVacation(${req.id}, 'rejected')">✗ Rejeter</button>
+            </div>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        container.innerHTML = '<p style="color:var(--warn);">Erreur: ' + escapeHtml(e.message) + '</p>';
+      }
+    }
+
+    window.managerReviewVacation = async (requestId, status) => {
+      const label = status === 'approved' ? 'approbation' : 'rejet';
+      const comment = prompt(`Commentaire (${label}) - optionnel:`);
+      if (comment === null) {
+        return;
+      }
+
+      try {
+        await apiCall('api/vacation_requests.php?action=review', {
+          method: 'POST',
+          body: JSON.stringify({
+            request_id: Number(requestId),
+            status,
+            comment,
+          }),
+        });
+        showToast(status === 'approved' ? 'Demande approuvée.' : 'Demande rejetée.');
+        loadManagerVacationRequests();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    };
 
     // Pointage avec géolocalisation
     document.getElementById('btn-pointage').addEventListener('click', async () => {
@@ -407,6 +604,10 @@ if (!$auth['employee_id']) {
         btn.textContent = '📤 Soumettre la demande';
       }
     });
+
+    document.getElementById('manager-team-employee').addEventListener('change', loadManagerSchedule);
+    document.getElementById('btn-manager-load-hours').addEventListener('click', loadManagerSchedule);
+    document.getElementById('btn-manager-save-hours').addEventListener('click', saveManagerSchedule);
 
     // Calendrier des pointages
     const DAYS_FR = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];

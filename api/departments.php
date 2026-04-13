@@ -14,10 +14,14 @@ try {
         $departments = $pdo->query(
             "SELECT d.id,
                     d.name,
+                    d.manager_employee_id,
+                    COALESCE(m.first_name, '') AS manager_first_name,
+                    COALESCE(m.last_name, '') AS manager_last_name,
                     COUNT(e.id) AS employee_count
              FROM departments d
              LEFT JOIN employees e ON e.department_id = d.id
-             GROUP BY d.id, d.name
+             LEFT JOIN employees m ON m.id = d.manager_employee_id
+               GROUP BY d.id, d.name, d.manager_employee_id, m.first_name, m.last_name
              ORDER BY d.name ASC"
         )->fetchAll();
 
@@ -34,21 +38,72 @@ try {
 
     if ($action === 'create' || $action === 'save') {
         $name = trim((string) ($payload['name'] ?? ''));
+        $managerEmployeeId = isset($payload['manager_employee_id']) && (int) $payload['manager_employee_id'] > 0
+            ? (int) $payload['manager_employee_id']
+            : null;
         if ($name === '') {
             json_response(['error' => 'Nom du departement obligatoire.'], 400);
             exit;
         }
 
-        $stmt = $pdo->prepare('INSERT INTO departments (name) VALUES (?)');
-        $stmt->execute([$name]);
+        if ($managerEmployeeId !== null) {
+            $stmt = $pdo->prepare('SELECT id FROM employees WHERE id = ? LIMIT 1');
+            $stmt->execute([$managerEmployeeId]);
+            if (!$stmt->fetch()) {
+                json_response(['error' => 'Responsable introuvable.'], 400);
+                exit;
+            }
+        }
+
+        $stmt = $pdo->prepare('INSERT INTO departments (name, manager_employee_id) VALUES (?, ?)');
+        $stmt->execute([$name, $managerEmployeeId]);
 
         json_response([
             'message' => 'Departement ajoute.',
             'department' => [
                 'id' => (int) $pdo->lastInsertId(),
                 'name' => $name,
+                'manager_employee_id' => $managerEmployeeId,
             ],
         ], 201);
+        exit;
+    }
+
+    if ($action === 'set_manager') {
+        $id = (int) ($_GET['id'] ?? ($payload['id'] ?? 0));
+        if ($id <= 0) {
+            json_response(['error' => 'Departement invalide.'], 400);
+            exit;
+        }
+
+        $managerEmployeeId = isset($payload['manager_employee_id']) && (int) $payload['manager_employee_id'] > 0
+            ? (int) $payload['manager_employee_id']
+            : null;
+
+        $stmt = $pdo->prepare('SELECT id FROM departments WHERE id = ? LIMIT 1');
+        $stmt->execute([$id]);
+        if (!$stmt->fetch()) {
+            json_response(['error' => 'Departement introuvable.'], 404);
+            exit;
+        }
+
+        if ($managerEmployeeId !== null) {
+            $stmt = $pdo->prepare('SELECT id FROM employees WHERE id = ? LIMIT 1');
+            $stmt->execute([$managerEmployeeId]);
+            if (!$stmt->fetch()) {
+                json_response(['error' => 'Responsable introuvable.'], 400);
+                exit;
+            }
+        }
+
+        $stmt = $pdo->prepare('UPDATE departments SET manager_employee_id = ? WHERE id = ?');
+        $stmt->execute([$managerEmployeeId, $id]);
+
+        json_response([
+            'message' => 'Responsable mis a jour.',
+            'department_id' => $id,
+            'manager_employee_id' => $managerEmployeeId,
+        ]);
         exit;
     }
 

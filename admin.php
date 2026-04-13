@@ -464,6 +464,9 @@ $user = get_auth_user();
             <label for="department-name">Nouveau departement</label>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
               <input id="department-name" type="text" placeholder="Ex: Production" required style="flex: 1; min-width: 180px;" />
+              <select id="department-manager" style="min-width: 220px;">
+                <option value="">Aucun responsable</option>
+              </select>
               <button type="submit" class="btn-in">Ajouter</button>
             </div>
           </form>
@@ -833,6 +836,7 @@ $user = get_auth_user();
       employeesList: document.getElementById('employees-list'),
       departmentForm: document.getElementById('department-form'),
       departmentName: document.getElementById('department-name'),
+      departmentManager: document.getElementById('department-manager'),
       departmentsList: document.getElementById('departments-list'),
       empAddress:     document.getElementById('emp-address'),
       empLat:         document.getElementById('emp-lat'),
@@ -1014,6 +1018,23 @@ $user = get_auth_user();
       }
     }
 
+    function renderDepartmentManagerOptions(preferredValue = '') {
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.departmentManager.value || '');
+
+      els.departmentManager.innerHTML = [
+        '<option value="">Aucun responsable</option>',
+        ...empCache.map(e => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`),
+      ].join('');
+
+      if (wanted && empCache.some(e => String(e.id) === wanted)) {
+        els.departmentManager.value = wanted;
+      } else {
+        els.departmentManager.value = '';
+      }
+    }
+
     function renderHoursViewDepartmentOptions(preferredValue = '') {
       const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
         ? String(preferredValue)
@@ -1116,7 +1137,15 @@ $user = get_auth_user();
               <div class="department-card">
                 <div>
                   <strong>${d.name}</strong><br/>
-                  <small>${Number(d.employee_count) || 0} collaborateur(s)</small>
+                  <small>${Number(d.employee_count) || 0} collaborateur(s)</small><br/>
+                  <label style="display:block; margin-top:0.4rem;">Responsable</label>
+                  <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.2rem;">
+                    <select id="dept-manager-${d.id}" style="min-width:200px;">
+                      <option value="">Aucun responsable</option>
+                      ${empCache.map(e => `<option value="${e.id}" ${String(d.manager_employee_id || '') === String(e.id) ? 'selected' : ''}>${e.first_name} ${e.last_name}</option>`).join('')}
+                    </select>
+                    <button class="btn-edit" onclick="updateDepartmentManager(${d.id})">Affecter</button>
+                  </div>
                 </div>
                 <button class="btn-delete" onclick="deleteDepartment(${d.id})">Supprimer</button>
               </div>
@@ -1171,6 +1200,7 @@ $user = get_auth_user();
         const preferredId = currentEditId || prevHoursValue;
         const currentEmployee = data.employees.find(e => String(e.id) === String(currentEditId));
         renderDepartmentOptions(currentEmployee ? currentEmployee.department_id : '');
+        renderDepartmentManagerOptions();
 
         if (existingIds.has(prevAbsValue)) {
           els.absEmployee.value = prevAbsValue;
@@ -1273,6 +1303,7 @@ $user = get_auth_user();
     els.departmentForm.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const name = els.departmentName.value.trim();
+      const managerEmployeeId = els.departmentManager.value ? Number(els.departmentManager.value) : null;
       if (!name) {
         showToast('Indiquez un nom de departement.', true);
         return;
@@ -1280,7 +1311,7 @@ $user = get_auth_user();
       try {
         await api('api/departments.php?action=create', {
           method: 'POST',
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({ name, manager_employee_id: managerEmployeeId }),
         });
         showToast('Departement ajoute');
         els.departmentForm.reset();
@@ -1288,6 +1319,26 @@ $user = get_auth_user();
         await loadEmployees();
       } catch (e) { showToast(e.message, true); }
     });
+
+    window.updateDepartmentManager = async (departmentId) => {
+      const select = document.getElementById(`dept-manager-${departmentId}`);
+      if (!select) {
+        showToast('Selection du responsable introuvable.', true);
+        return;
+      }
+
+      const managerEmployeeId = select.value ? Number(select.value) : null;
+      try {
+        await api('api/departments.php?action=set_manager&id=' + encodeURIComponent(departmentId), {
+          method: 'POST',
+          body: JSON.stringify({ manager_employee_id: managerEmployeeId }),
+        });
+        showToast('Responsable mis a jour');
+        await loadDepartments();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    };
 
     // Absences
     async function loadAbsences() {

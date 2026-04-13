@@ -130,10 +130,50 @@ try {
     }
     unset($e);
 
+    $managedDepartmentIds = jit_get_managed_department_ids($pdo, $emp_id);
+    $managedDepartments = [];
+    $managedTeam = [];
+
+    if ($managedDepartmentIds) {
+        $placeholders = implode(',', array_fill(0, count($managedDepartmentIds), '?'));
+
+        $stmt = $pdo->prepare(
+            "SELECT d.id, d.name
+             FROM departments d
+             WHERE d.id IN ($placeholders)
+             ORDER BY d.name ASC"
+        );
+        $stmt->execute($managedDepartmentIds);
+        $managedDepartments = $stmt->fetchAll();
+
+        $stmt = $pdo->prepare(
+            "SELECT e.id,
+                    COALESCE(e.first_name, '') AS first_name,
+                    COALESCE(e.last_name, '') AS last_name,
+                    e.department_id,
+                    COALESCE(d.name, '') AS department_name
+             FROM employees e
+             JOIN departments d ON d.id = e.department_id
+             WHERE e.department_id IN ($placeholders)
+               AND e.active = 1
+               AND e.id <> ?
+             ORDER BY d.name ASC, e.last_name ASC, e.first_name ASC"
+        );
+        $params = $managedDepartmentIds;
+        $params[] = $emp_id;
+        $stmt->execute($params);
+        $managedTeam = $stmt->fetchAll();
+    }
+
     json_response([
         'employee' => $employee,
         'today'    => $today_events,
         'history'  => $history,
+        'manager_scope' => [
+            'is_manager' => !empty($managedDepartments),
+            'departments' => $managedDepartments,
+            'team' => $managedTeam,
+        ],
         'vacation' => [
             'total'   => $total_days,
             'used'    => $used_days,
