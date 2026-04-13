@@ -15,43 +15,40 @@ $scheduledCols = $pdo->query("SHOW COLUMNS FROM scheduled_hours")->fetchAll(PDO:
 $hasWeekStart = in_array('week_start', $scheduledCols, true);
 $hasRecurrence = in_array('recurrence_interval', $scheduledCols, true) && in_array('recurrence_slot', $scheduledCols, true);
 
-$reportView = $_GET['view'] ?? 'employee';
-if (!in_array($reportView, ['employee', 'department'], true)) {
-  $reportView = 'employee';
-}
-
-// Récupérer les employés
-$employees = $pdo->query(
-    "SELECT id,
-        COALESCE(first_name, '') AS first_name,
-        COALESCE(last_name, '') AS last_name
-     FROM employees WHERE active = 1 ORDER BY last_name, first_name"
+// Reporting: vue departement uniquement
+$departments = $pdo->query(
+  "SELECT d.id,
+      d.name,
+      COUNT(e.id) AS employee_count
+   FROM departments d
+   LEFT JOIN employees e ON e.department_id = d.id AND e.active = 1
+   GROUP BY d.id, d.name
+   ORDER BY d.name"
 )->fetchAll();
-
-  $departments = $pdo->query(
-    "SELECT d.id,
-        d.name,
-        COUNT(e.id) AS employee_count
-     FROM departments d
-     LEFT JOIN employees e ON e.department_id = d.id AND e.active = 1
-     GROUP BY d.id, d.name
-     ORDER BY d.name"
-  )->fetchAll();
 
 // Semaine courante
 $week_start = date('Y-m-d', strtotime('monday this week'));
 
-  $selected_emp_id = (int) ($_GET['emp_id'] ?? ($employees[0]['id'] ?? 0));
-  $selected_department_id = (int) ($_GET['department_id'] ?? ($departments[0]['id'] ?? 0));
+$selected_department_id = (int) ($_GET['department_id'] ?? ($departments[0]['id'] ?? 0));
 $selected_week = $_GET['week'] ?? $week_start;
 $week_start_selected = date('Y-m-d', strtotime('monday', strtotime($selected_week)));
 $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)));
 
-  $days = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-  $dates = [];
-  for ($i = 0; $i < 7; $i++) {
-    $dates[$i] = date('Y-m-d', strtotime("+$i day", strtotime($week_start_selected)));
-  }
+$dayLabelsByNum = [
+  1 => 'Lundi',
+  2 => 'Mardi',
+  3 => 'Mercredi',
+  4 => 'Jeudi',
+  5 => 'Vendredi',
+  6 => 'Samedi',
+  0 => 'Dimanche',
+];
+$calendarDayOrder = [1, 2, 3, 4, 5, 6, 0];
+$dateByDayNum = [];
+for ($offset = 0; $offset < 7; $offset++) {
+  $dayNum = $calendarDayOrder[$offset];
+  $dateByDayNum[$dayNum] = date('Y-m-d', strtotime("+$offset day", strtotime($week_start_selected)));
+}
 
   $loadPlannedRowsForEmployee = static function (PDO $pdo, int $employeeId, bool $hasWeekStart, bool $hasRecurrence, string $weekStartSelected): array {
     if ($employeeId <= 0) {
@@ -195,15 +192,51 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
     }
     .summary-card strong { font-size: 1.5rem; display: block; margin-top: 0.5rem; }
     .summary-card p { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--ink-soft); }
-    .charts-grid { display:grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1.2rem; }
-    .chart-card {
+    .calendar-card {
+      margin-top: 1.2rem;
       padding: 1rem;
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 10px;
+      overflow-x: auto;
     }
-    .chart-card h3 { margin: 0 0 0.75rem; font-size: 1rem; }
-    .chart-note { margin: 0.5rem 0 0; color: var(--ink-soft); font-size: 0.85rem; }
+    .calendar-card h3 { margin: 0 0 0.75rem; font-size: 1rem; }
+    .calendar-grid {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 920px;
+    }
+    .calendar-grid th,
+    .calendar-grid td {
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      text-align: center;
+      padding: 0.45rem;
+      font-size: 0.85rem;
+    }
+    .calendar-grid th:first-child,
+    .calendar-grid td:first-child {
+      text-align: left;
+      font-weight: 600;
+      color: var(--ink-soft);
+      width: 86px;
+      position: sticky;
+      left: 0;
+      background: var(--surface);
+      z-index: 1;
+    }
+    .calendar-grid thead th {
+      position: sticky;
+      top: 0;
+      background: var(--surface-2);
+      z-index: 2;
+    }
+    .cell-empty { background: rgba(255,255,255,0.02); color: var(--ink-soft); }
+    .cell-l1 { background: rgba(67, 97, 238, 0.15); }
+    .cell-l2 { background: rgba(67, 97, 238, 0.3); }
+    .cell-l3 { background: rgba(67, 97, 238, 0.45); color: #fff; }
+    .cell-l4 { background: rgba(67, 97, 238, 0.6); color: #fff; font-weight: 700; }
+    .calendar-note { margin: 0.6rem 0 0; color: var(--ink-soft); font-size: 0.82rem; }
     @media (max-width: 920px) {
       .filter { grid-template-columns: 1fr; }
       .summary { grid-template-columns: repeat(2, 1fr); }
@@ -236,42 +269,21 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
   <main class="layout">
     <header class="hero">
       <h1>📊 Heures Travaillées</h1>
-      <p class="subtitle">Suivi hebdomadaire avec détail par jour</p>
+      <p class="subtitle">Vue département en mode calendrier hebdomadaire</p>
     </header>
 
     <div class="panel">
       <form method="GET" class="filter">
         <div>
-          <label for="view-select" style="display: block; margin-bottom: 0.3rem; font-weight: 600;">Vue</label>
-          <select name="view" id="view-select" onchange="this.form.submit()">
-            <option value="employee" <?= $reportView === 'employee' ? 'selected' : '' ?>>Par collaborateur</option>
-            <option value="department" <?= $reportView === 'department' ? 'selected' : '' ?>>Par département</option>
+          <label for="department-select" style="display: block; margin-bottom: 0.3rem; font-weight: 600;">Département</label>
+          <select name="department_id" id="department-select" onchange="this.form.submit()">
+            <?php foreach ($departments as $department): ?>
+              <option value="<?= $department['id'] ?>" <?= (int) $department['id'] === $selected_department_id ? 'selected' : '' ?>>
+                <?= htmlspecialchars($department['name']) ?>
+              </option>
+            <?php endforeach; ?>
           </select>
         </div>
-
-        <?php if ($reportView === 'employee'): ?>
-          <div>
-            <label for="emp-select" style="display: block; margin-bottom: 0.3rem; font-weight: 600;">Collaborateur</label>
-            <select name="emp_id" id="emp-select" onchange="this.form.submit()">
-              <?php foreach ($employees as $emp): ?>
-                <option value="<?= $emp['id'] ?>" <?= (int) $emp['id'] === $selected_emp_id ? 'selected' : '' ?>>
-                  <?= htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']) ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-        <?php else: ?>
-          <div>
-            <label for="department-select" style="display: block; margin-bottom: 0.3rem; font-weight: 600;">Département</label>
-            <select name="department_id" id="department-select" onchange="this.form.submit()">
-              <?php foreach ($departments as $department): ?>
-                <option value="<?= $department['id'] ?>" <?= (int) $department['id'] === $selected_department_id ? 'selected' : '' ?>>
-                  <?= htmlspecialchars($department['name']) ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-        <?php endif; ?>
 
         <div>
           <label for="week-select" style="display: block; margin-bottom: 0.3rem; font-weight: 600;">Semaine du</label>
@@ -280,14 +292,17 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
       </form>
 
       <?php
-      $dailyScheduled = array_fill(0, 7, 0.0);
-      $dailyWorked = array_fill(0, 7, 0.0);
-      $hourLabels = array_map(static fn($h) => sprintf('%02dh', $h), range(0, 23));
-      $staffingByDayHour = array_fill(0, 7, array_fill(0, 24, 0));
+      $dailyScheduledByDay = array_fill_keys(range(0, 6), 0.0);
+      $dailyWorkedByDay = array_fill_keys(range(0, 6), 0.0);
+      $displayHours = range(0, 23);
+      $staffingByDayHour = [];
+      foreach (range(0, 6) as $dayNum) {
+        $staffingByDayHour[$dayNum] = array_fill(0, 24, 0);
+      }
       $staffingRowsWithoutTime = 0;
-      $contextLabel = 'Sélection';
-      $contextCountLabel = 'Statut';
-      $contextCountValue = 'N/A';
+      $contextLabel = 'Département';
+      $contextCountLabel = 'Collaborateurs';
+      $contextCountValue = '0';
 
       $accumulateStaffing = static function (array &$staffingGrid, array $rows, int &$missingCount): void {
         foreach ($rows as $row) {
@@ -322,137 +337,82 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
         }
       };
 
-      if ($reportView === 'employee') {
-          $stmt = $pdo->prepare('SELECT first_name, last_name FROM employees WHERE id = ?');
-          $stmt->execute([$selected_emp_id]);
-          $employee = $stmt->fetch();
-          $contextLabel = $employee ? trim($employee['first_name'] . ' ' . $employee['last_name']) : 'Collaborateur';
+      $stmt = $pdo->prepare('SELECT id, name FROM departments WHERE id = ? LIMIT 1');
+      $stmt->execute([$selected_department_id]);
+      $department = $stmt->fetch();
+      $contextLabel = $department ? $department['name'] : 'Département';
 
-          $plannedRows = $loadPlannedRowsForEmployee($pdo, $selected_emp_id, $hasWeekStart, $hasRecurrence, $week_start_selected);
-          $scheduled = [];
-          foreach ($plannedRows as $row) {
-            $d = (int) ($row['day_of_week'] ?? -1);
-            if ($d >= 0 && $d <= 6) {
-              $scheduled[$d] = (float) ($scheduled[$d] ?? 0) + (float) ($row['hours'] ?? 0);
-            }
-          }
-          $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, [$selected_emp_id], $week_start_selected, $week_end_selected);
-          $filteredRows = [];
-          foreach ($plannedRows as $row) {
-            $day = (int) ($row['day_of_week'] ?? -1);
-            if ($day < 0 || $day > 6) {
-              continue;
-            }
-            $isUnavailable = !empty($unavailableByEmployee[$selected_emp_id][$dates[$day]]);
-            if (!$isUnavailable) {
-              $filteredRows[] = $row;
-            }
-          }
-          $accumulateStaffing($staffingByDayHour, $filteredRows, $staffingRowsWithoutTime);
+      $stmt = $pdo->prepare(
+        'SELECT id FROM employees WHERE active = 1 AND department_id = ? ORDER BY id'
+      );
+      $stmt->execute([$selected_department_id]);
+      $employeeIds = array_map(static fn($row) => (int) $row['id'], $stmt->fetchAll());
+      $contextCountValue = (string) count($employeeIds);
 
-          for ($day = 0; $day < 7; $day++) {
-            $isUnavailable = !empty($unavailableByEmployee[$selected_emp_id][$dates[$day]]);
-            $dailyScheduled[$day] = $isUnavailable ? 0.0 : (float) ($scheduled[$day] ?? 0);
+      $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, $employeeIds, $week_start_selected, $week_end_selected);
 
-              $stmt = $pdo->prepare(
-                  'SELECT COALESCE(TIMESTAMPDIFF(SECOND, MIN(timestamp), MAX(timestamp)), 0)
-                   FROM attendance_events
-                   WHERE employee_id = ? AND DATE(timestamp) = ?'
-              );
-              $stmt->execute([$selected_emp_id, $dates[$day]]);
-              $seconds = (int) $stmt->fetchColumn();
-              $dailyWorked[$day] = $seconds > 0 ? round($seconds / 3600, 2) : 0.0;
+      foreach ($employeeIds as $employeeId) {
+        $plannedRows = $loadPlannedRowsForEmployee($pdo, $employeeId, $hasWeekStart, $hasRecurrence, $week_start_selected);
+        $filteredRows = [];
+
+        foreach ($plannedRows as $row) {
+          $day = (int) ($row['day_of_week'] ?? -1);
+          if ($day < 0 || $day > 6) {
+            continue;
           }
 
-          $contextCountValue = 'Individuel';
-      } else {
-          $stmt = $pdo->prepare('SELECT id, name FROM departments WHERE id = ? LIMIT 1');
-          $stmt->execute([$selected_department_id]);
-          $department = $stmt->fetch();
-          $contextLabel = $department ? $department['name'] : 'Département';
-
-          $stmt = $pdo->prepare(
-              'SELECT id FROM employees WHERE active = 1 AND department_id = ? ORDER BY id'
-          );
-          $stmt->execute([$selected_department_id]);
-          $employeeIds = array_map(static fn($row) => (int) $row['id'], $stmt->fetchAll());
-
-          $contextCountLabel = 'Collaborateurs';
-          $contextCountValue = (string) count($employeeIds);
-            $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, $employeeIds, $week_start_selected, $week_end_selected);
-
-          foreach ($employeeIds as $employeeId) {
-              $plannedRows = $loadPlannedRowsForEmployee($pdo, $employeeId, $hasWeekStart, $hasRecurrence, $week_start_selected);
-              $filteredRows = [];
-              $employeeSchedule = [];
-              foreach ($plannedRows as $row) {
-                $day = (int) ($row['day_of_week'] ?? -1);
-                if ($day < 0 || $day > 6) {
-                  continue;
-                }
-                $isUnavailable = !empty($unavailableByEmployee[$employeeId][$dates[$day]]);
-                if ($isUnavailable) {
-                  continue;
-                }
-                $employeeSchedule[$day] = (float) ($employeeSchedule[$day] ?? 0) + (float) ($row['hours'] ?? 0);
-                $filteredRows[] = $row;
-              }
-              $accumulateStaffing($staffingByDayHour, $filteredRows, $staffingRowsWithoutTime);
-              for ($day = 0; $day < 7; $day++) {
-                $dailyScheduled[$day] += (float) ($employeeSchedule[$day] ?? 0);
-              }
+          $dayDate = $dateByDayNum[$day] ?? null;
+          if ($dayDate === null) {
+            continue;
           }
 
-          if ($employeeIds) {
-              $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
-              $params = array_merge($employeeIds, [$week_start_selected, $week_end_selected]);
-
-              $stmt = $pdo->prepare(
-                  "SELECT employee_id,
-                          DATE(timestamp) AS event_date,
-                          COALESCE(TIMESTAMPDIFF(SECOND, MIN(timestamp), MAX(timestamp)), 0) AS worked_seconds
-                   FROM attendance_events
-                   WHERE employee_id IN ($placeholders)
-                     AND DATE(timestamp) BETWEEN ? AND ?
-                   GROUP BY employee_id, DATE(timestamp)"
-              );
-              $stmt->execute($params);
-              $rows = $stmt->fetchAll();
-
-              foreach ($rows as $row) {
-                  $eventDate = (string) $row['event_date'];
-                  $dateIndex = array_search($eventDate, $dates, true);
-                  if ($dateIndex === false) {
-                      continue;
-                  }
-
-                  $seconds = (int) ($row['worked_seconds'] ?? 0);
-                  $hours = $seconds > 0 ? round($seconds / 3600, 2) : 0.0;
-                  $dailyWorked[$dateIndex] += $hours;
-              }
+          $isUnavailable = !empty($unavailableByEmployee[$employeeId][$dayDate]);
+          if ($isUnavailable) {
+            continue;
           }
+
+          $dailyScheduledByDay[$day] += (float) ($row['hours'] ?? 0);
+          $filteredRows[] = $row;
+        }
+
+        $accumulateStaffing($staffingByDayHour, $filteredRows, $staffingRowsWithoutTime);
       }
 
-      $totalScheduled = round(array_sum($dailyScheduled), 2);
-      $totalWorked = round(array_sum($dailyWorked), 2);
+      if ($employeeIds) {
+        $placeholders = implode(',', array_fill(0, count($employeeIds), '?'));
+        $params = array_merge($employeeIds, [$week_start_selected, $week_end_selected]);
+
+        $stmt = $pdo->prepare(
+          "SELECT DATE(timestamp) AS event_date,
+                  COALESCE(TIMESTAMPDIFF(SECOND, MIN(timestamp), MAX(timestamp)), 0) AS worked_seconds
+           FROM attendance_events
+           WHERE employee_id IN ($placeholders)
+             AND DATE(timestamp) BETWEEN ? AND ?
+           GROUP BY employee_id, DATE(timestamp)"
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        foreach ($rows as $row) {
+          $eventDate = (string) ($row['event_date'] ?? '');
+          if ($eventDate === '') {
+            continue;
+          }
+          $dayNum = (int) date('w', strtotime($eventDate));
+          $seconds = (int) ($row['worked_seconds'] ?? 0);
+          $hours = $seconds > 0 ? round($seconds / 3600, 2) : 0.0;
+          $dailyWorkedByDay[$dayNum] += $hours;
+        }
+      }
+
+      $totalScheduled = round(array_sum($dailyScheduledByDay), 2);
+      $totalWorked = round(array_sum($dailyWorkedByDay), 2);
       $diff = round($totalWorked - $totalScheduled, 2);
       $diffClass = $diff >= 0 ? 'status-ok' : 'status-diff';
-      $dailyScheduledJs = json_encode(array_map(static fn($v) => round((float) $v, 2), $dailyScheduled));
-      $dailyWorkedJs = json_encode(array_map(static fn($v) => round((float) $v, 2), $dailyWorked));
-      $hourLabelsJs = json_encode($hourLabels);
-      $staffingDatasets = [];
-      $dayColors = ['#4cc9f0', '#4361ee', '#3a0ca3', '#7209b7', '#f72585', '#f77f00', '#2a9d8f'];
-      for ($day = 0; $day < 7; $day++) {
-        $staffingDatasets[] = [
-          'label' => $days[$day],
-          'data' => array_map(static fn($v) => (int) $v, $staffingByDayHour[$day]),
-          'borderColor' => $dayColors[$day],
-          'backgroundColor' => $dayColors[$day] . '33',
-          'fill' => false,
-          'tension' => 0.25,
-        ];
+      $maxStaffing = 0;
+      foreach ($staffingByDayHour as $hours) {
+        $maxStaffing = max($maxStaffing, max($hours));
       }
-      $staffingDatasetsJs = json_encode($staffingDatasets);
       ?>
 
       <h2 style="margin-top: 2rem;">Semaine du <?= date('d/m/Y', strtotime($week_start_selected)) ?> au <?= date('d/m/Y', strtotime($week_end_selected)) ?> — <?= htmlspecialchars($contextLabel) ?></h2>
@@ -468,23 +428,23 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
           </tr>
         </thead>
         <tbody>
-          <?php for ($day = 0; $day < 7; $day++): ?>
+          <?php foreach ($calendarDayOrder as $day): ?>
             <?php 
-            $scheduled_h = round((float) $dailyScheduled[$day], 2);
-            $worked_h = round((float) $dailyWorked[$day], 2);
+            $scheduled_h = round((float) ($dailyScheduledByDay[$day] ?? 0), 2);
+            $worked_h = round((float) ($dailyWorkedByDay[$day] ?? 0), 2);
             $day_diff = round($worked_h - $scheduled_h, 2);
             $day_class = ($day_diff >= 0) ? 'status-ok' : 'status-diff';
             ?>
             <tr>
-              <td><?= $days[$day] ?></td>
-              <td><?= date('d/m/Y', strtotime($dates[$day])) ?></td>
+              <td><?= htmlspecialchars($dayLabelsByNum[$day]) ?></td>
+              <td><?= date('d/m/Y', strtotime($dateByDayNum[$day])) ?></td>
               <td><?= number_format($scheduled_h, 2, ',', '') ?></td>
               <td><?= number_format($worked_h, 2, ',', '') ?></td>
               <td class="<?= $day_class ?>">
                 <?= ($day_diff >= 0 ? '+' : '') . number_format($day_diff, 2, ',', '') ?>
               </td>
             </tr>
-          <?php endfor; ?>
+          <?php endforeach; ?>
         </tbody>
       </table>
 
@@ -511,84 +471,53 @@ $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)
         </div>
       </div>
 
-      <div class="charts-grid">
-        <div class="chart-card">
-          <h3>Evolution hebdomadaire: prevu vs travaille</h3>
-          <canvas id="hours-week-chart" height="120"></canvas>
-        </div>
-
-        <div class="chart-card">
-          <h3>Personnes prevues par heure (chaque jour)</h3>
-          <canvas id="staffing-hour-chart" height="130"></canvas>
-          <?php if ($staffingRowsWithoutTime > 0): ?>
-            <p class="chart-note">Note: <?= (int) $staffingRowsWithoutTime ?> plage(s) sans heure debut/fin n'ont pas pu etre projetees sur l'axe horaire.</p>
-          <?php endif; ?>
-        </div>
+      <div class="calendar-card">
+        <h3>Calendrier de charge: personnes prévues par heure</h3>
+        <table class="calendar-grid">
+          <thead>
+            <tr>
+              <th>Heure</th>
+              <?php foreach ($calendarDayOrder as $day): ?>
+                <th><?= htmlspecialchars(substr($dayLabelsByNum[$day], 0, 3)) ?><br><small><?= date('d/m', strtotime($dateByDayNum[$day])) ?></small></th>
+              <?php endforeach; ?>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($displayHours as $hour): ?>
+              <tr>
+                <td><?= sprintf('%02d:00', $hour) ?></td>
+                <?php foreach ($calendarDayOrder as $day): ?>
+                  <?php
+                    $count = (int) ($staffingByDayHour[$day][$hour] ?? 0);
+                    if ($count <= 0) {
+                      $cellClass = 'cell-empty';
+                    } else {
+                      $ratio = $maxStaffing > 0 ? ($count / $maxStaffing) : 0;
+                      if ($ratio >= 0.75) {
+                        $cellClass = 'cell-l4';
+                      } elseif ($ratio >= 0.5) {
+                        $cellClass = 'cell-l3';
+                      } elseif ($ratio >= 0.25) {
+                        $cellClass = 'cell-l2';
+                      } else {
+                        $cellClass = 'cell-l1';
+                      }
+                    }
+                  ?>
+                  <td class="<?= $cellClass ?>"><?= $count > 0 ? $count : '' ?></td>
+                <?php endforeach; ?>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+        <p class="calendar-note">Lecture: plus la case est foncée, plus le nombre de personnes prévues est élevé.</p>
+        <?php if ($staffingRowsWithoutTime > 0): ?>
+          <p class="calendar-note">Note: <?= (int) $staffingRowsWithoutTime ?> plage(s) sans heure début/fin ne peuvent pas être affichées dans ce calendrier horaire.</p>
+        <?php endif; ?>
       </div>
     </div>
 
     <section id="toast" class="toast" role="status" aria-live="polite"></section>
   </main>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script>
-    const dayLabels = <?= json_encode($days) ?>;
-    const dailyScheduledData = <?= $dailyScheduledJs ?>;
-    const dailyWorkedData = <?= $dailyWorkedJs ?>;
-    const hourLabels = <?= $hourLabelsJs ?>;
-    const staffingDatasets = <?= $staffingDatasetsJs ?>;
-
-    const hoursWeekCanvas = document.getElementById('hours-week-chart');
-    if (hoursWeekCanvas) {
-      new Chart(hoursWeekCanvas, {
-        type: 'bar',
-        data: {
-          labels: dayLabels,
-          datasets: [
-            {
-              label: 'Heures prevues',
-              data: dailyScheduledData,
-              backgroundColor: '#4361ee99',
-              borderColor: '#4361ee',
-              borderWidth: 1
-            },
-            {
-              label: 'Heures travaillees',
-              data: dailyWorkedData,
-              backgroundColor: '#2a9d8f99',
-              borderColor: '#2a9d8f',
-              borderWidth: 1
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            y: { beginAtZero: true, title: { display: true, text: 'Heures' } }
-          }
-        }
-      });
-    }
-
-    const staffingHourCanvas = document.getElementById('staffing-hour-chart');
-    if (staffingHourCanvas) {
-      new Chart(staffingHourCanvas, {
-        type: 'line',
-        data: {
-          labels: hourLabels,
-          datasets: staffingDatasets
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          scales: {
-            y: { beginAtZero: true, title: { display: true, text: 'Personnes prevues' } },
-            x: { title: { display: true, text: 'Heure de la journee' } }
-          }
-        }
-      });
-    }
-  </script>
 </body>
 </html>
