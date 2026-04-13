@@ -768,9 +768,6 @@ $user = get_auth_user();
         }
       </style>
       <div class="vac-filter">
-        <select id="vac-selected-employee">
-          <option value="">Choisir un collaborateur</option>
-        </select>
         <select id="vac-employee-filter">
           <option value="">Tous les collaborateurs</option>
         </select>
@@ -916,7 +913,6 @@ $user = get_auth_user();
       payrollOvertimeTable: document.getElementById('payroll-overtime-table'),
       payrollClosuresList: document.getElementById('payroll-closures-list'),
       payrollAuditList: document.getElementById('payroll-audit-list'),
-      vacSelectedEmployee: document.getElementById('vac-selected-employee'),
       vacEmployeeFilter: document.getElementById('vac-employee-filter'),
       vacStatusFilter: document.getElementById('vac-status-filter'),
       vacBalanceSummary: document.getElementById('vac-balance-summary'),
@@ -1124,28 +1120,16 @@ $user = get_auth_user();
       }
     }
 
-    function renderVacationEmployeeOptions(selectedValue = '', filterValue = '') {
-      const selectedWanted = selectedValue !== '' && selectedValue !== null && selectedValue !== undefined
+    function renderVacationEmployeeOptions(selectedValue = '') {
+      const wanted = selectedValue !== '' && selectedValue !== null && selectedValue !== undefined
         ? String(selectedValue)
-        : String(els.vacSelectedEmployee.value || '');
-      const filterWanted = filterValue !== '' && filterValue !== null && filterValue !== undefined
-        ? String(filterValue)
         : String(els.vacEmployeeFilter.value || '');
 
       const options = empCache.map(e => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`).join('');
-      els.vacSelectedEmployee.innerHTML = '<option value="">Choisir un collaborateur</option>' + options;
       els.vacEmployeeFilter.innerHTML = '<option value="">Tous les collaborateurs</option>' + options;
 
-      if (selectedWanted && empCache.some(e => String(e.id) === selectedWanted)) {
-        els.vacSelectedEmployee.value = selectedWanted;
-      } else if (empCache.length) {
-        els.vacSelectedEmployee.value = String(empCache[0].id);
-      } else {
-        els.vacSelectedEmployee.value = '';
-      }
-
-      if (filterWanted && empCache.some(e => String(e.id) === filterWanted)) {
-        els.vacEmployeeFilter.value = filterWanted;
+      if (wanted && empCache.some(e => String(e.id) === wanted)) {
+        els.vacEmployeeFilter.value = wanted;
       } else {
         els.vacEmployeeFilter.value = '';
       }
@@ -1190,7 +1174,6 @@ $user = get_auth_user();
         const prevHoursValue = els.hoursEmployee.value;
         const prevHoursViewEmployee = els.hoursViewEmployee.value;
         const prevPayrollEmployee = els.payrollEmployee.value;
-        const prevVacationEmployee = els.vacSelectedEmployee.value;
         const prevVacationFilter = els.vacEmployeeFilter.value;
         const currentEditId = els.empId.value;
 
@@ -1224,7 +1207,7 @@ $user = get_auth_user();
         els.hoursEmployee.innerHTML = optionsHtml;
         renderHoursViewEmployeeOptions(prevHoursViewEmployee);
         renderPayrollEmployeeOptions(prevPayrollEmployee);
-        renderVacationEmployeeOptions(prevVacationEmployee, prevVacationFilter);
+        renderVacationEmployeeOptions(prevVacationFilter);
 
         const existingIds = new Set(data.employees.map(e => String(e.id)));
         const preferredId = currentEditId || prevHoursValue;
@@ -2474,7 +2457,7 @@ $user = get_auth_user();
     }
 
     async function loadVacationBalanceSummary() {
-      const employeeId = els.vacSelectedEmployee.value;
+      const employeeId = els.vacEmployeeFilter.value;
       if (!employeeId) {
         els.vacBalanceSummary.innerHTML = '<div class="hours-empty">Sélectionne un collaborateur pour consulter les soldes.</div>';
         els.vacAdjustmentDays.value = '0';
@@ -2554,26 +2537,15 @@ $user = get_auth_user();
       }
     };
 
-    els.vacSelectedEmployee.addEventListener('change', () => {
-      if (els.vacSelectedEmployee.value) {
-        els.vacEmployeeFilter.value = els.vacSelectedEmployee.value;
-      }
-      loadVacationBalanceSummary();
-      loadVacationRequests();
-    });
-
     els.vacEmployeeFilter.addEventListener('change', () => {
-      if (els.vacEmployeeFilter.value) {
-        els.vacSelectedEmployee.value = els.vacEmployeeFilter.value;
-        loadVacationBalanceSummary();
-      }
+      loadVacationBalanceSummary();
       loadVacationRequests();
     });
 
     els.vacStatusFilter.addEventListener('change', loadVacationRequests);
 
     els.btnSaveVacBalances.addEventListener('click', async () => {
-      const employeeId = els.vacSelectedEmployee.value;
+      const employeeId = els.vacEmployeeFilter.value;
       if (!employeeId) {
         showToast('Choisis un collaborateur.', true);
         return;
