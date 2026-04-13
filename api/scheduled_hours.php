@@ -89,6 +89,12 @@ function ensure_scheduled_hours_schema(PDO $pdo): void
     if (!$has('recurrence_slot')) {
         $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN recurrence_slot TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER recurrence_interval");
     }
+    if (!$has('is_working_day')) {
+        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN is_working_day TINYINT(1) NOT NULL DEFAULT 1 AFTER recurrence_slot");
+    }
+    if (!$has('is_paid_off')) {
+        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN is_paid_off TINYINT(1) NOT NULL DEFAULT 0 AFTER is_working_day");
+    }
 
     $indexes = $pdo->query('SHOW INDEX FROM scheduled_hours')->fetchAll();
     $hasOld = false;
@@ -208,6 +214,42 @@ try {
         }
 
         json_response(['hours' => $rows]);
+        exit;
+    }
+
+    if ($action === 'calculate') {
+        $payload = json_decode(file_get_contents('php://input'), true) ?? [];
+        $days = $payload['days'] ?? [];
+        
+        if (!is_array($days)) {
+            json_response(['error' => 'Format invalide pour les jours.'], 400);
+            exit;
+        }
+
+        $totalHours = 0;
+        $workingDays = 0;
+
+        foreach ($days as $dayData) {
+            $dayOfWeek = (int) ($dayData['day_of_week'] ?? -1);
+            $hours = (float) ($dayData['hours'] ?? 0);
+            $isWorkingDay = (bool) ($dayData['is_working_day'] ?? true);
+            $isPaidOff = (bool) ($dayData['is_paid_off'] ?? false);
+
+            if ($dayOfWeek < 0 || $dayOfWeek > 6 || !$isWorkingDay) {
+                continue;
+            }
+
+            $totalHours += max(0, $hours);
+            if ($hours > 0 || $isPaidOff) {
+                $workingDays++;
+            }
+        }
+
+        json_response([
+            'total_hours' => round($totalHours, 2),
+            'working_days' => $workingDays,
+            'average_hours_per_day' => $workingDays > 0 ? round($totalHours / $workingDays, 2) : 0
+        ]);
         exit;
     }
 
@@ -372,11 +414,11 @@ try {
         }
 
         $ins = $pdo->prepare(
-            'INSERT INTO scheduled_hours (employee_id, week_start, day_of_week, hours, start_time, end_time, entry_mode, recurrence_interval, recurrence_slot)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO scheduled_hours (employee_id, week_start, day_of_week, hours, start_time, end_time, entry_mode, recurrence_interval, recurrence_slot, is_working_day, is_paid_off)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        foreach ($rowsToInsert as [$day, $hours, $startTime, $endTime, $entryMode]) {
-            $ins->execute([$emp_id, $targetWeek, $day, $hours, $startTime, $endTime, $entryMode, $recurrenceInterval, $recurrenceSlot]);
+        foreach ($rowsToInsert as [$day, $hours, $startTime, $endTime, $entryMode, $isWorkingDay, $isPaidOff]) {
+            $ins->execute([$emp_id, $targetWeek, $day, $hours, $startTime, $endTime, $entryMode, $recurrenceInterval, $recurrenceSlot, $isWorkingDay ?? 1, $isPaidOff ?? 0]);
         }
 
         json_response([

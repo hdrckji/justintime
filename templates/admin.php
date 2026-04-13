@@ -319,10 +319,47 @@ $user = get_auth_user();
           </div>
         </div>
       </div>
+      
+      <div style="margin-top: 1.5rem; padding: 1rem; background: var(--surface-2); border-radius: 10px;">
+        <h3 style="margin-top:0; font-size:1rem;">Récapitulatif</h3>
+        <div style="display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+          <div>
+            <strong>Total heures</strong>
+            <div id="hours-calc-total" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0.00 h</div>
+          </div>
+          <div>
+            <strong>Jours travaillés</strong>
+            <div id="hours-calc-days" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0</div>
+          </div>
+          <div>
+            <strong>Moyenne/jour</strong>
+            <div id="hours-calc-avg" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0.00 h</div>
+          </div>
+        </div>
+      </div>
+
       <button id="btn-save-hours" class="btn-in" style="margin-top: 1rem;">Enregistrer horaires</button>
     </div>
 
-    <!-- Onglet Demandes de congés -->
+    <!-- Onglet Jours off / Congés -->
+    <div id="off-days" class="tab-content panel" style="display:none;">
+      <h2>Jours de repos et congés</h2>
+      <p style="color: var(--text-muted);">Marquer les jours où l'employé ne travaille pas (week-end, congés, jours off, etc.)</p>
+      <div style="margin-top: 1.5rem; border: 1px solid var(--line); border-radius: 10px; padding: 1rem;">
+        <div class="form-group">
+          <label for="off-days-employee">Collaborateur</label>
+          <select id="off-days-employee"></select>
+        </div>
+        <div class="form-group">
+          <label for="off-days-week">Semaine du (lundi)</label>
+          <input id="off-days-week" type="date" />
+        </div>
+        <div id="off-days-grid" style="display: grid; gap: 0.8rem; margin-top: 1.5rem;"></div>
+        <button id="btn-save-off-days" class="btn-in" style="margin-top: 1.5rem;">Enregistrer jours de repos</button>
+      </div>
+    </div>
+
+    <!-- Original vacation requests tab -->
     <div id="vacation-requests" class="tab-content panel">
       <h2>Demandes de congés</h2>
       <style>
@@ -618,6 +655,32 @@ $user = get_auth_user();
           </div>
         `;
       }).join('');
+      
+      calculateHoursRealtime();
+    }
+
+    async function calculateHoursRealtime() {
+      const dayInputs = document.querySelectorAll('#hours-daily input[type="number"][data-day]');
+      const days = Array.from(dayInputs).map(inp => ({
+        day_of_week: Number(inp.dataset.day),
+        hours: Number(inp.value || 0) || 0,
+        is_working_day: true,
+        is_paid_off: false
+      }));
+
+      try {
+        const response = await api('api/scheduled_hours.php?action=calculate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ days })
+        });
+
+        document.getElementById('hours-calc-total').textContent = `${response.total_hours.toFixed(2)} h`;
+        document.getElementById('hours-calc-days').textContent = response.working_days;
+        document.getElementById('hours-calc-avg').textContent = `${response.average_hours_per_day.toFixed(2)} h`;
+      } catch (e) {
+        console.error('Erreur calcul horaires:', e);
+      }
     }
 
     function updateHoursModeVisibility() {
@@ -696,6 +759,10 @@ $user = get_auth_user();
       loadHoursForSelected();
     });
     els.hoursMode.addEventListener('change', updateHoursModeVisibility);
+
+    // Recalcul temps réel des heures
+    els.hoursDaily.addEventListener('change', calculateHoursRealtime);
+    els.hoursDaily.addEventListener('input', calculateHoursRealtime);
 
     els.btnSaveHours.addEventListener('click', async () => {
       const empId = els.hoursEmployee.value;

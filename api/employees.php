@@ -8,18 +8,22 @@ header('Content-Type: application/json; charset=utf-8');
 
 function table_columns(PDO $pdo, string $table): array
 {
+    static $cache = [];
+    
+    if (isset($cache[$table])) {
+        return $cache[$table];
+    }
+
     $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
-    return $pdo->query("SHOW COLUMNS FROM `{$safe}`")->fetchAll(PDO::FETCH_COLUMN);
+    $cols = $pdo->query("SHOW COLUMNS FROM `{$safe}`")->fetchAll(PDO::FETCH_COLUMN);
+    
+    $cache[$table] = $cols;
+    return $cols;
 }
 
 function table_exists(PDO $pdo, string $table): bool
 {
-    $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
-    $stmt = $pdo->prepare(
-        'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
-    );
-    $stmt->execute([$safe]);
-    return (int) $stmt->fetchColumn() > 0;
+    return jit_table_exists($pdo, $table);
 }
 
 function has_col(array $cols, string $name): bool

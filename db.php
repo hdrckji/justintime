@@ -4,44 +4,68 @@ require_once __DIR__ . '/config.php';
 function get_pdo(): PDO
 {
     static $pdo = null;
-    if ($pdo !== null) {
+    static $schema_ensured = false;
+    
+    if ($pdo !== null && $schema_ensured) {
         return $pdo;
     }
 
-    $dsn = sprintf(
-        'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
-        DB_HOST,
-        DB_PORT,
-        DB_NAME
-    );
+    if ($pdo === null) {
+        $dsn = sprintf(
+            'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+            DB_HOST,
+            DB_PORT,
+            DB_NAME
+        );
 
-    $pdo = new PDO($dsn, DB_USER, DB_PASS, [
-        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_EMULATE_PREPARES   => false,
-    ]);
+        $pdo = new PDO($dsn, DB_USER, DB_PASS, [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES   => false,
+        ]);
+    }
 
-    ensure_department_schema($pdo);
-    ensure_device_settings_schema($pdo);
-    ensure_telework_schema($pdo);
-    ensure_payroll_schema($pdo);
+    if (!$schema_ensured) {
+        ensure_department_schema($pdo);
+        ensure_device_settings_schema($pdo);
+        ensure_telework_schema($pdo);
+        ensure_payroll_schema($pdo);
+        $schema_ensured = true;
+    }
 
     return $pdo;
 }
 
 function jit_table_exists(PDO $pdo, string $table): bool
 {
+    static $cache = [];
+    
+    if (isset($cache[$table])) {
+        return $cache[$table];
+    }
+
     $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
     $stmt = $pdo->prepare(
         'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
     );
     $stmt->execute([$safe]);
-    return (int) $stmt->fetchColumn() > 0;
+    $exists = (int) $stmt->fetchColumn() > 0;
+    
+    $cache[$table] = $exists;
+    return $exists;
 }
 
 function jit_column_exists(PDO $pdo, string $table, string $column): bool
 {
+    static $cache = [];
+    
+    $key = "{$table}.{$column}";
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+
     if (!jit_table_exists($pdo, $table)) {
+        $cache[$key] = false;
         return false;
     }
 
@@ -49,16 +73,26 @@ function jit_column_exists(PDO $pdo, string $table, string $column): bool
     $stmt = $pdo->query("SHOW COLUMNS FROM `{$safe}`");
     foreach ($stmt->fetchAll() as $row) {
         if (($row['Field'] ?? '') === $column) {
+            $cache[$key] = true;
             return true;
         }
     }
 
+    $cache[$key] = false;
     return false;
 }
 
 function jit_index_exists(PDO $pdo, string $table, string $index): bool
 {
+    static $cache = [];
+    
+    $key = "{$table}.{$index}";
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+
     if (!jit_table_exists($pdo, $table)) {
+        $cache[$key] = false;
         return false;
     }
 
@@ -67,10 +101,12 @@ function jit_index_exists(PDO $pdo, string $table, string $index): bool
     $rows = $pdo->query("SHOW INDEX FROM `{$safeTable}`")->fetchAll();
     foreach ($rows as $row) {
         if (($row['Key_name'] ?? '') === $safeIndex) {
+            $cache[$key] = true;
             return true;
         }
     }
 
+    $cache[$key] = false;
     return false;
 }
 
