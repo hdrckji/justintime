@@ -17,6 +17,7 @@ function jit_employee_balance_summary(PDO $pdo, int $employeeId, int $year): arr
         "SELECT id,
                 TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,''))) AS employee_name,
                 badge_id,
+                DATE(COALESCE(created_at, CURRENT_TIMESTAMP)) AS created_on,
                 COALESCE(vacation_days, 25) AS vacation_days,
                 COALESCE(vacation_adjustment_days, 0) AS vacation_adjustment_days,
                 COALESCE(overtime_adjustment_hours, 0) AS overtime_adjustment_hours
@@ -73,7 +74,16 @@ function jit_employee_balance_summary(PDO $pdo, int $employeeId, int $year): arr
          ) dates"
     );
     $rangeStmt->execute([$employeeId, $employeeId, $employeeId]);
-    $from = (string) ($rangeStmt->fetchColumn() ?: date('Y-01-01'));
+    $firstTrackedDay = (string) ($rangeStmt->fetchColumn() ?: '');
+
+    $createdOn = (string) ($employee['created_on'] ?? '');
+    $yearStart = date('Y-01-01');
+    $createdStart = preg_match('/^\d{4}-\d{2}-\d{2}$/', $createdOn) ? $createdOn : $yearStart;
+    if ($createdStart < $yearStart) {
+        $createdStart = $yearStart;
+    }
+
+    $from = $firstTrackedDay !== '' ? $firstTrackedDay : $createdStart;
 
     $computedOvertime = 0.0;
     foreach (jit_each_date($from, $to) as $dateIso) {
