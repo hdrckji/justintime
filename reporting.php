@@ -179,19 +179,6 @@ for ($offset = 0; $offset < 7; $offset++) {
       padding: 0.6rem; background: var(--surface-2); color: var(--ink);
       border: 1px solid var(--line); border-radius: 8px; font: inherit;
     }
-    .week-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.95rem; }
-    .week-table th, .week-table td { text-align: left; padding: 0.8rem; border-bottom: 1px solid var(--line); }
-    .week-table th { background: var(--surface-2); font-weight: 600; color: var(--ink-soft); }
-    .week-table tr:hover { background: rgba(255,255,255,0.03); }
-    .status-ok { color: var(--ok); font-weight: 600; }
-    .status-diff { color: var(--warn); font-weight: 600; }
-    .summary { display: grid; gap: 1rem; grid-template-columns: repeat(4, 1fr); margin-top: 2rem; }
-    .summary-card {
-      padding: 1rem; background: var(--surface);
-      border: 1px solid var(--line); border-radius: 10px; text-align: center;
-    }
-    .summary-card strong { font-size: 1.5rem; display: block; margin-top: 0.5rem; }
-    .summary-card p { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--ink-soft); }
     .calendar-card {
       margin-top: 1.2rem;
       padding: 1rem;
@@ -239,13 +226,9 @@ for ($offset = 0; $offset < 7; $offset++) {
     .calendar-note { margin: 0.6rem 0 0; color: var(--ink-soft); font-size: 0.82rem; }
     @media (max-width: 920px) {
       .filter { grid-template-columns: 1fr; }
-      .summary { grid-template-columns: repeat(2, 1fr); }
     }
     @media (max-width: 560px) {
       .filter { gap: 0.8rem; }
-      .summary { grid-template-columns: 1fr; gap: 0.8rem; }
-      .week-table { font-size: 0.8rem; }
-      .week-table th, .week-table td { padding: 0.5rem 0.3rem; }
     }
   </style>
 </head>
@@ -301,8 +284,6 @@ for ($offset = 0; $offset < 7; $offset++) {
       }
       $staffingRowsWithoutTime = 0;
       $contextLabel = 'Département';
-      $contextCountLabel = 'Collaborateurs';
-      $contextCountValue = '0';
 
       $accumulateStaffing = static function (array &$staffingGrid, array $rows, int &$missingCount): void {
         foreach ($rows as $row) {
@@ -347,7 +328,6 @@ for ($offset = 0; $offset < 7; $offset++) {
       );
       $stmt->execute([$selected_department_id]);
       $employeeIds = array_map(static fn($row) => (int) $row['id'], $stmt->fetchAll());
-      $contextCountValue = (string) count($employeeIds);
 
       $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, $employeeIds, $week_start_selected, $week_end_selected);
 
@@ -405,74 +385,15 @@ for ($offset = 0; $offset < 7; $offset++) {
         }
       }
 
-      $totalScheduled = round(array_sum($dailyScheduledByDay), 2);
-      $totalWorked = round(array_sum($dailyWorkedByDay), 2);
-      $diff = round($totalWorked - $totalScheduled, 2);
-      $diffClass = $diff >= 0 ? 'status-ok' : 'status-diff';
       $maxStaffing = 0;
       foreach ($staffingByDayHour as $hours) {
         $maxStaffing = max($maxStaffing, max($hours));
       }
       ?>
 
-      <h2 style="margin-top: 2rem;">Semaine du <?= date('d/m/Y', strtotime($week_start_selected)) ?> au <?= date('d/m/Y', strtotime($week_end_selected)) ?> — <?= htmlspecialchars($contextLabel) ?></h2>
-
-      <table class="week-table">
-        <thead>
-          <tr>
-            <th>Jour</th>
-            <th>Date</th>
-            <th>Horaire Prevu (h)</th>
-            <th>Travaille (h)</th>
-            <th>Difference (h)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($calendarDayOrder as $day): ?>
-            <?php 
-            $scheduled_h = round((float) ($dailyScheduledByDay[$day] ?? 0), 2);
-            $worked_h = round((float) ($dailyWorkedByDay[$day] ?? 0), 2);
-            $day_diff = round($worked_h - $scheduled_h, 2);
-            $day_class = ($day_diff >= 0) ? 'status-ok' : 'status-diff';
-            ?>
-            <tr>
-              <td><?= htmlspecialchars($dayLabelsByNum[$day]) ?></td>
-              <td><?= date('d/m/Y', strtotime($dateByDayNum[$day])) ?></td>
-              <td><?= number_format($scheduled_h, 2, ',', '') ?></td>
-              <td><?= number_format($worked_h, 2, ',', '') ?></td>
-              <td class="<?= $day_class ?>">
-                <?= ($day_diff >= 0 ? '+' : '') . number_format($day_diff, 2, ',', '') ?>
-              </td>
-            </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
-
-      <div class="summary">
-        <div class="summary-card">
-          <p>Total Prevu (h)</p>
-          <strong><?= number_format($totalScheduled, 2, ',', '') ?></strong>
-        </div>
-        <div class="summary-card">
-          <p>Total Travaille (h)</p>
-          <strong><?= number_format($totalWorked, 2, ',', '') ?></strong>
-        </div>
-        <div class="summary-card">
-          <p>Solde Heures</p>
-          <strong class="<?= $diffClass ?>">
-            <?= ($diff >= 0 ? '+' : '') . number_format($diff, 2, ',', '') ?>
-          </strong>
-        </div>
-        <div class="summary-card">
-          <p><?= htmlspecialchars($contextCountLabel) ?></p>
-          <strong class="<?= $diffClass ?>">
-            <?= htmlspecialchars($contextCountValue) ?>
-          </strong>
-        </div>
-      </div>
-
       <div class="calendar-card">
-        <h3>Calendrier de charge: personnes prévues par heure</h3>
+        <h3>Semaine du <?= date('d/m/Y', strtotime($week_start_selected)) ?> au <?= date('d/m/Y', strtotime($week_end_selected)) ?> — <?= htmlspecialchars($contextLabel) ?></h3>
+        <p class="calendar-note" style="margin-top: 0;">Calendrier de charge: personnes prévues par heure.</p>
         <table class="calendar-grid">
           <thead>
             <tr>
