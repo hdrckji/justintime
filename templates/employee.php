@@ -396,6 +396,13 @@ if (!$auth['employee_id']) {
       return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
     }
 
+    function toLocalISODate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
     let nextEventType = 'in';
     const managerState = {
       isManager: false,
@@ -500,11 +507,11 @@ if (!$auth['employee_id']) {
     }
 
     function toMondayISO(value) {
-      const d = new Date(value || new Date().toISOString().slice(0, 10));
+      const d = value ? new Date(`${value}T00:00:00`) : new Date();
       const day = d.getDay();
       const diff = day === 0 ? -6 : 1 - day;
       d.setDate(d.getDate() + diff);
-      return d.toISOString().slice(0, 10);
+      return toLocalISODate(d);
     }
 
     function ensureManagerWeekDefaults() {
@@ -1048,7 +1055,7 @@ if (!$auth['employee_id']) {
         order.forEach((dayNum, index) => {
           const d = new Date(weekStart + 'T00:00:00');
           d.setDate(d.getDate() + index);
-          dayDateByNum[dayNum] = d.toISOString().slice(0, 10);
+          dayDateByNum[dayNum] = toLocalISODate(d);
         });
 
         if (source === 'week') {
