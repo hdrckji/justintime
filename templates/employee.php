@@ -595,17 +595,23 @@ if (!$auth['employee_id']) {
               const date = new Date(mondayDate);
               date.setDate(mondayDate.getDate() + idx);
               const dateText = source === 'week' ? date.toLocaleDateString('fr-FR') : '-';
-              const range = row && row.start_time && row.end_time
-                ? `${String(row.start_time).slice(0, 5)} - ${String(row.end_time).slice(0, 5)}`
-                : '-';
-              const hours = Number(row?.hours || 0);
+              const start = row && row.start_time ? String(row.start_time).slice(0, 5) : '';
+              const end = row && row.end_time ? String(row.end_time).slice(0, 5) : '';
+              const breakMinutes = Number(row?.break_minutes ?? 60);
               return `
                 <tr>
                   <td>${escapeHtml(dayLabels[day])}</td>
                   <td>${escapeHtml(dateText)}</td>
-                  <td>${escapeHtml(range)}</td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap;">
+                      <input type="time" data-day="${day}" data-kind="start" value="${escapeHtml(start)}" style="padding:0.3rem 0.4rem; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink);" />
+                      <span>→</span>
+                      <input type="time" data-day="${day}" data-kind="end" value="${escapeHtml(end)}" style="padding:0.3rem 0.4rem; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink);" />
+                    </div>
+                    <small style="color:var(--ink-soft);">Pause: ${breakMinutes} min</small>
+                  </td>
                   <td class="hours">
-                    <input type="number" min="0" max="24" step="0.25" data-day="${day}" class="manager-detail-hours" value="${hours.toFixed(2)}" style="width:100px; padding:0.3rem 0.4rem; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink);" />
+                    <span class="manager-day-hours" data-day="${day}" data-break-minutes="${breakMinutes}">0.00 h</span>
                   </td>
                 </tr>
               `;
@@ -615,6 +621,55 @@ if (!$auth['employee_id']) {
       `;
 
       document.getElementById('manager-week-detail').innerHTML = html;
+      recalcManagerDetailHours();
+
+      document.querySelectorAll('#manager-week-detail input[data-kind="start"], #manager-week-detail input[data-kind="end"]').forEach(input => {
+        input.addEventListener('input', recalcManagerDetailHours);
+        input.addEventListener('change', recalcManagerDetailHours);
+      });
+    }
+
+    function parseTimeToMinutes(value) {
+      if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
+      const [h, m] = value.split(':').map(Number);
+      if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+      return (h * 60) + m;
+    }
+
+    function recalcManagerDetailHours() {
+      const labels = document.querySelectorAll('#manager-week-detail .manager-day-hours[data-day]');
+      let total = 0;
+
+      labels.forEach(label => {
+        const day = label.dataset.day;
+        const breakMinutes = Math.max(0, Number(label.dataset.breakMinutes || 0));
+        const startInput = document.querySelector(`#manager-week-detail input[data-day="${day}"][data-kind="start"]`);
+        const endInput = document.querySelector(`#manager-week-detail input[data-day="${day}"][data-kind="end"]`);
+        const startMins = parseTimeToMinutes(startInput ? startInput.value : '');
+        const endMins = parseTimeToMinutes(endInput ? endInput.value : '');
+
+        if (startMins === null || endMins === null) {
+          label.textContent = '0.00 h';
+          return;
+        }
+
+        if (endMins <= startMins || breakMinutes >= (endMins - startMins)) {
+          label.textContent = 'invalide';
+          return;
+        }
+
+        const hours = Math.max(0, (endMins - startMins - breakMinutes) / 60);
+        total += hours;
+        label.textContent = `${hours.toFixed(2)} h`;
+      });
+
+      const targetQuota = Number(managerState.loadedQuotaHours ?? 0);
+      const quotaNote = document.getElementById('manager-hours-quota-note');
+      if (quotaNote && Number.isFinite(targetQuota)) {
+        quotaNote.textContent = `Quota horaire a respecter: ${targetQuota.toFixed(2)} h · total saisi: ${total.toFixed(2)} h`;
+      }
+
+      return total;
     }
 
     function renderManagerTeamWeekDetail(teamRows = [], headerNote = '') {
@@ -626,37 +681,22 @@ if (!$auth['employee_id']) {
         return;
       }
 
-      const totalByDay = Array(7).fill(0);
       const bodyRows = teamRows.map(item => {
         const byDay = new Map((item.rows || []).map(r => [Number(r.day_of_week), r]));
-        const values = order.map((day, idx) => {
+        const values = order.map((day) => {
           const row = byDay.get(day);
-          const hours = Number(row?.hours || 0);
           const range = row && row.start_time && row.end_time
             ? `${String(row.start_time).slice(0, 5)} - ${String(row.end_time).slice(0, 5)}`
             : '—';
-          totalByDay[idx] += hours;
-          return `<td><span class="manager-team-cell-range">${escapeHtml(range)}</span><span class="manager-team-cell-hours">${hours.toFixed(2)} h</span></td>`;
+          return `<td><span class="manager-team-cell-range">${escapeHtml(range)}</span></td>`;
         }).join('');
-
-        const total = order.reduce((acc, day) => acc + Number(byDay.get(day)?.hours || 0), 0);
         return `
           <tr>
             <td>${escapeHtml(item.name)}</td>
             ${values}
-            <td class="sum">${total.toFixed(2)} h</td>
           </tr>
         `;
       }).join('');
-
-      const grandTotal = totalByDay.reduce((acc, h) => acc + h, 0);
-      const footer = `
-        <tr>
-          <td class="sum">Total équipe</td>
-          ${totalByDay.map(h => `<td class="sum">${h.toFixed(2)} h</td>`).join('')}
-          <td class="sum">${grandTotal.toFixed(2)} h</td>
-        </tr>
-      `;
 
       document.getElementById('manager-team-week-detail').innerHTML = `
         <p class="manager-muted" style="margin-bottom:0.45rem;">${escapeHtml(headerNote)}</p>
@@ -666,12 +706,10 @@ if (!$auth['employee_id']) {
               <tr>
                 <th>Collaborateur</th>
                 ${weekDays.map(label => `<th>${escapeHtml(label)}</th>`).join('')}
-                <th>Total</th>
               </tr>
             </thead>
             <tbody>
               ${bodyRows}
-              ${footer}
             </tbody>
           </table>
         </div>
@@ -748,11 +786,51 @@ if (!$auth['employee_id']) {
       }
 
       const hours = {};
-      document.querySelectorAll('#manager-week-detail input[data-day]').forEach(input => {
-        const day = Number(input.dataset.day);
-        const val = parseFloat(input.value || '0') || 0;
-        hours[day] = val;
+      const referenceDays = [];
+      let hasInvalidRange = false;
+
+      document.querySelectorAll('#manager-week-detail .manager-day-hours[data-day]').forEach(label => {
+        const day = Number(label.dataset.day);
+        const breakMinutes = Math.max(0, Number(label.dataset.breakMinutes || 0));
+        const startInput = document.querySelector(`#manager-week-detail input[data-day="${day}"][data-kind="start"]`);
+        const endInput = document.querySelector(`#manager-week-detail input[data-day="${day}"][data-kind="end"]`);
+        const start = startInput ? String(startInput.value || '').trim() : '';
+        const end = endInput ? String(endInput.value || '').trim() : '';
+
+        if (!start && !end) {
+          return;
+        }
+        if (!start || !end) {
+          hasInvalidRange = true;
+          return;
+        }
+
+        const startMins = parseTimeToMinutes(start);
+        const endMins = parseTimeToMinutes(end);
+        if (startMins === null || endMins === null || endMins <= startMins || breakMinutes >= (endMins - startMins)) {
+          hasInvalidRange = true;
+          return;
+        }
+
+        const dayHours = Math.max(0, (endMins - startMins - breakMinutes) / 60);
+        hours[day] = dayHours;
+        referenceDays.push({
+          day,
+          start_time: start,
+          end_time: end,
+          break_minutes: breakMinutes,
+        });
       });
+
+      if (hasInvalidRange) {
+        showToast('Corrige les heures de debut/fin invalides avant enregistrement.', true);
+        return;
+      }
+
+      if (!referenceDays.length) {
+        showToast('Definis au moins une plage horaire.', true);
+        return;
+      }
 
       const newTotal = Object.values(hours).reduce((acc, value) => acc + Number(value || 0), 0);
       const targetQuota = Number(managerState.loadedQuotaHours ?? 0);
@@ -767,10 +845,12 @@ if (!$auth['employee_id']) {
           method: 'POST',
           body: JSON.stringify({
             employee_id: Number(employeeId),
-            mode: 'daily',
+            mode: 'reference',
             apply_to: source === 'week' ? 'week' : 'default',
+            recurrence_interval: source === 'cycle' ? 3 : 1,
+            recurrence_slot: source === 'cycle' ? Number(document.getElementById('manager-hours-cycle').value || 1) : 1,
             ...(source === 'week' ? { week_start: toMondayISO(document.getElementById('manager-hours-week-start').value) } : {}),
-            hours,
+            reference_days: referenceDays,
           }),
         });
         showToast('Horaires enregistrés.');
