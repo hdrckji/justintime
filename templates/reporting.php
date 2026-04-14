@@ -15,7 +15,7 @@ $scheduledCols = $pdo->query("SHOW COLUMNS FROM scheduled_hours")->fetchAll(PDO:
 $hasWeekStart = in_array('week_start', $scheduledCols, true);
 $hasRecurrence = in_array('recurrence_interval', $scheduledCols, true) && in_array('recurrence_slot', $scheduledCols, true);
 
-// Reporting: vue departement uniquement
+// Reporting: vue departement / rayon
 $departments = $pdo->query(
   "SELECT d.id,
       d.name,
@@ -29,7 +29,32 @@ $departments = $pdo->query(
 // Semaine courante
 $week_start = date('Y-m-d', strtotime('monday this week'));
 
+$selected_scope = $_GET['scope'] ?? 'department';
+if (!in_array($selected_scope, ['department', 'rayon'], true)) {
+  $selected_scope = 'department';
+}
+
 $selected_department_id = (int) ($_GET['department_id'] ?? ($departments[0]['id'] ?? 0));
+$rayons = [];
+if ($selected_department_id > 0) {
+  $stmt = $pdo->prepare(
+    "SELECT DISTINCT TRIM(COALESCE(rayon, '')) AS rayon
+     FROM employees
+     WHERE active = 1
+       AND department_id = ?
+       AND TRIM(COALESCE(rayon, '')) <> ''
+     ORDER BY rayon ASC"
+  );
+  $stmt->execute([$selected_department_id]);
+  $rayons = array_values(array_filter(array_map(static fn($r) => (string) ($r['rayon'] ?? ''), $stmt->fetchAll())));
+}
+$selected_rayon = trim((string) ($_GET['rayon'] ?? ''));
+if ($selected_scope === 'rayon') {
+  if ($selected_rayon === '' && !empty($rayons)) {
+    $selected_rayon = (string) $rayons[0];
+  }
+}
+
 $selected_week = $_GET['week'] ?? $week_start;
 $week_start_selected = date('Y-m-d', strtotime('monday', strtotime($selected_week)));
 $week_end_selected = date('Y-m-d', strtotime('sunday', strtotime($selected_week)));
@@ -252,17 +277,37 @@ for ($offset = 0; $offset < 7; $offset++) {
   <main class="layout">
     <header class="hero">
       <h1>📊 Heures Travaillées</h1>
-      <p class="subtitle">Vue département en mode calendrier hebdomadaire</p>
+      <p class="subtitle">Vue département/rayon en mode calendrier hebdomadaire</p>
     </header>
 
     <div class="panel">
       <form method="GET" class="filter">
+        <div>
+          <label for="scope-select" style="display: block; margin-bottom: 0.3rem; font-weight: 600;">Vue</label>
+          <select name="scope" id="scope-select" onchange="this.form.submit()">
+            <option value="department" <?= $selected_scope === 'department' ? 'selected' : '' ?>>Par département</option>
+            <option value="rayon" <?= $selected_scope === 'rayon' ? 'selected' : '' ?>>Par rayon</option>
+          </select>
+        </div>
+
         <div>
           <label for="department-select" style="display: block; margin-bottom: 0.3rem; font-weight: 600;">Département</label>
           <select name="department_id" id="department-select" onchange="this.form.submit()">
             <?php foreach ($departments as $department): ?>
               <option value="<?= $department['id'] ?>" <?= (int) $department['id'] === $selected_department_id ? 'selected' : '' ?>>
                 <?= htmlspecialchars($department['name']) ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+
+        <div>
+          <label for="rayon-select" style="display: block; margin-bottom: 0.3rem; font-weight: 600;">Rayon</label>
+          <select name="rayon" id="rayon-select" onchange="this.form.submit()" <?= $selected_scope === 'rayon' ? '' : 'disabled' ?>>
+            <option value="">Tous les rayons</option>
+            <?php foreach ($rayons as $rayon): ?>
+              <option value="<?= htmlspecialchars($rayon) ?>" <?= $selected_rayon === $rayon ? 'selected' : '' ?>>
+                <?= htmlspecialchars($rayon) ?>
               </option>
             <?php endforeach; ?>
           </select>
@@ -321,12 +366,27 @@ for ($offset = 0; $offset < 7; $offset++) {
       $stmt = $pdo->prepare('SELECT id, name FROM departments WHERE id = ? LIMIT 1');
       $stmt->execute([$selected_department_id]);
       $department = $stmt->fetch();
-      $contextLabel = $department ? $department['name'] : 'Département';
 
-      $stmt = $pdo->prepare(
-        'SELECT id FROM employees WHERE active = 1 AND department_id = ? ORDER BY id'
-      );
-      $stmt->execute([$selected_department_id]);
+      if ($selected_scope === 'rayon' && $selected_rayon !== '') {
+        $contextLabel = $department
+          ? ($department['name'] . ' / Rayon ' . $selected_rayon)
+          : ('Rayon ' . $selected_rayon);
+        $stmt = $pdo->prepare(
+          'SELECT id
+           FROM employees
+           WHERE active = 1
+             AND department_id = ?
+             AND TRIM(COALESCE(rayon, "")) = ?
+           ORDER BY id'
+        );
+        $stmt->execute([$selected_department_id, $selected_rayon]);
+      } else {
+        $contextLabel = $department ? $department['name'] : 'Département';
+        $stmt = $pdo->prepare(
+          'SELECT id FROM employees WHERE active = 1 AND department_id = ? ORDER BY id'
+        );
+        $stmt->execute([$selected_department_id]);
+      }
       $employeeIds = array_map(static fn($row) => (int) $row['id'], $stmt->fetchAll());
 
       $unavailableByEmployee = $loadUnavailableDaysForEmployees($pdo, $employeeIds, $week_start_selected, $week_end_selected);

@@ -423,6 +423,10 @@ $user = get_auth_user();
               <option value="">Aucun departement</option>
             </select>
           </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="emp-rayon">Rayon</label>
+            <input id="emp-rayon" type="text" placeholder="Ex: Fruits et legumes" />
+          </div>
         </div>
         <div class="form-grid-auto" style="margin-top: 0.5rem;">
           <div class="form-group" style="margin: 0; grid-column: span 2;">
@@ -848,6 +852,7 @@ $user = get_auth_user();
       empBadge: document.getElementById('emp-badge'),
       empActive: document.getElementById('emp-active'),
       empDepartment: document.getElementById('emp-department'),
+      empRayon: document.getElementById('emp-rayon'),
       employeesList: document.getElementById('employees-list'),
       departmentForm: document.getElementById('department-form'),
       departmentName: document.getElementById('department-name'),
@@ -1242,6 +1247,7 @@ $user = get_auth_user();
               <strong>${e.first_name} ${e.last_name}</strong><br/>
               <small>${e.badge_id}</small>
               ${e.department_name ? `<br/><span class="department-pill">🏷️ ${e.department_name}</span>` : '<br/><small style="color:var(--ink-soft)">Aucun departement</small>'}
+              ${e.rayon ? `<br/><small style="color:var(--ink-soft)">Rayon: ${escapeHtml(e.rayon)}</small>` : ''}
               ${e.address ? `<br/><small style="color:var(--ink-soft)">📍 ${e.address}</small>` : ''}
               ${Number(e.telework_enabled || 0) === 1 ? '<br/><small style="color:var(--ok)">🏠 Teletravail autorise</small>' : ''}
               <br/><small style="color:${e.login_username ? 'var(--ok)' : 'var(--warn)'}">
@@ -1311,6 +1317,7 @@ $user = get_auth_user();
       els.empBadge.value  = emp.badge_id;
       els.empActive.value = emp.active;
       els.empDepartment.value = emp.department_id ? String(emp.department_id) : '';
+      els.empRayon.value = emp.rayon || '';
       els.empAddress.value = emp.address || '';
       els.empLat.value     = emp.latitude ?? '';
       els.empLng.value     = emp.longitude ?? '';
@@ -1344,6 +1351,7 @@ $user = get_auth_user();
             badge_id: els.empBadge.value,
             active: els.empActive.value,
             department_id: els.empDepartment.value || null,
+            rayon: els.empRayon.value.trim(),
             address: els.empAddress.value,
             latitude: els.empLat.value !== '' ? parseFloat(els.empLat.value) : null,
             longitude: els.empLng.value !== '' ? parseFloat(els.empLng.value) : null,
@@ -1356,6 +1364,7 @@ $user = get_auth_user();
         showToast('Collaborateur enregistre');
         els.empForm.reset();
         els.empDepartment.value = '';
+        els.empRayon.value = '';
         els.empTeleworkEnabled.checked = false;
         renderAllowedLocations([]);
         toggleTeleworkLocationsVisibility();

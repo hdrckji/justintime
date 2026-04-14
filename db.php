@@ -166,8 +166,16 @@ function ensure_department_schema(PDO $pdo): void
         $pdo->exec("ALTER TABLE employees ADD COLUMN department_id INT NULL DEFAULT NULL AFTER active");
     }
 
+    if (!jit_column_exists($pdo, 'employees', 'rayon')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN rayon VARCHAR(100) NOT NULL DEFAULT '' AFTER department_id");
+    }
+
     if (!jit_index_exists($pdo, 'employees', 'idx_employees_department')) {
         $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_department (department_id)");
+    }
+
+    if (!jit_index_exists($pdo, 'employees', 'idx_employees_rayon')) {
+        $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_rayon (rayon)");
     }
 
     if (!jit_foreign_key_exists($pdo, 'employees', 'fk_employees_department')) {

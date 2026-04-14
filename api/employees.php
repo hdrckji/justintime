@@ -47,6 +47,7 @@ try {
     $has_telework = has_col($emp_cols, 'telework_enabled');
     $has_vac   = has_col($emp_cols, 'vacation_days');
     $has_department = has_col($emp_cols, 'department_id') && table_exists($pdo, 'departments');
+    $has_rayon = has_col($emp_cols, 'rayon');
     $has_allowed_locations = table_exists($pdo, 'employee_allowed_locations');
     $has_user_employee_id = has_col($usr_cols, 'employee_id');
 
@@ -71,6 +72,7 @@ try {
         $vac_expr     = $has_vac ? "COALESCE(e.vacation_days, 25) AS vacation_days" : "25 AS vacation_days";
         $department_id_expr = $has_department ? "e.department_id" : "NULL AS department_id";
         $department_name_expr = $has_department ? "COALESCE(d.name, '') AS department_name" : "'' AS department_name";
+        $rayon_expr = $has_rayon ? "COALESCE(e.rayon, '') AS rayon" : "'' AS rayon";
         $login_expr   = $has_user_employee_id
             ? "(SELECT u.username FROM users u WHERE u.employee_id = e.id AND u.role = 'employee' LIMIT 1) AS login_username"
             : "NULL AS login_username";
@@ -91,6 +93,7 @@ try {
                 {$vac_expr},
                 {$department_id_expr},
                 {$department_name_expr},
+                     {$rayon_expr},
                 {$login_expr}
              FROM employees e
              {$join_departments}
@@ -254,6 +257,7 @@ try {
         $department_id = isset($payload['department_id']) && (int) $payload['department_id'] > 0
             ? (int) $payload['department_id']
             : null;
+        $rayon = trim((string) ($payload['rayon'] ?? ''));
 
         if (!$first || !$last || !$badge) {
             json_response(['error' => 'Tous les champs sont obligatoires.'], 400);
@@ -318,6 +322,10 @@ try {
             if ($has_department) {
                 $set[] = 'department_id = ?';
                 $vals[] = $department_id;
+            }
+            if ($has_rayon) {
+                $set[] = 'rayon = ?';
+                $vals[] = $rayon;
             }
 
             $vals[] = $id;
@@ -386,6 +394,11 @@ try {
             if ($has_department) {
                 $cols[] = 'department_id';
                 $vals[] = $department_id;
+                $phs[] = '?';
+            }
+            if ($has_rayon) {
+                $cols[] = 'rayon';
+                $vals[] = $rayon;
                 $phs[] = '?';
             }
 

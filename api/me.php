@@ -71,6 +71,99 @@ try {
         exit;
     }
 
+    if ($action === 'manager_history') {
+        $managedDepartmentIds = jit_get_managed_department_ids($pdo, $emp_id);
+        if (!$managedDepartmentIds) {
+            json_response(['error' => 'Acces manager requis.'], 403);
+            exit;
+        }
+
+        $filterYear  = isset($_GET['year'])  ? (int) $_GET['year']  : (int) date('Y');
+        $filterMonth = isset($_GET['month']) ? (int) $_GET['month'] : 0;
+        $filterWeek  = isset($_GET['week'])  ? (int) $_GET['week']  : 0;
+        $filterDepartmentId = isset($_GET['department_id']) ? (int) $_GET['department_id'] : 0;
+        $filterEmployeeId = isset($_GET['employee_id']) ? (int) $_GET['employee_id'] : 0;
+        $filterRayon = trim((string) ($_GET['rayon'] ?? ''));
+
+        $from = null;
+        $to   = null;
+
+        if ($filterWeek > 0 && $filterMonth > 0) {
+            $firstDay = mktime(0, 0, 0, $filterMonth, 1, $filterYear);
+            $dayOfWeek = (int) date('N', $firstDay);
+            $mondayOffset = ($dayOfWeek === 1) ? 0 : (8 - $dayOfWeek);
+            $firstMonday = $firstDay + $mondayOffset * 86400;
+            $weekStart = $firstMonday + ($filterWeek - 1) * 7 * 86400;
+            $weekEnd   = $weekStart + 6 * 86400;
+            $from = date('Y-m-d', $weekStart);
+            $to   = date('Y-m-d', $weekEnd);
+        } elseif ($filterMonth > 0) {
+            $from = sprintf('%04d-%02d-01', $filterYear, $filterMonth);
+            $lastDay = (int) date('t', mktime(0, 0, 0, $filterMonth, 1, $filterYear));
+            $to   = sprintf('%04d-%02d-%02d', $filterYear, $filterMonth, $lastDay);
+        } else {
+            $from = sprintf('%04d-01-01', $filterYear);
+            $to   = sprintf('%04d-12-31', $filterYear);
+        }
+
+        $departmentIds = $managedDepartmentIds;
+        if ($filterDepartmentId > 0) {
+            if (!in_array($filterDepartmentId, $managedDepartmentIds, true)) {
+                json_response(['error' => 'Departement hors perimetre manager.'], 403);
+                exit;
+            }
+            $departmentIds = [$filterDepartmentId];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($departmentIds), '?'));
+        $sql =
+            "SELECT ae.id,
+                    ae.employee_id,
+                    ae.event_type,
+                    ae.source,
+                    ae.timestamp,
+                    COALESCE(e.first_name, '') AS first_name,
+                    COALESCE(e.last_name, '') AS last_name,
+                    e.department_id,
+                    COALESCE(e.rayon, '') AS rayon
+             FROM attendance_events ae
+             JOIN employees e ON e.id = ae.employee_id
+             WHERE e.department_id IN ($placeholders)
+               AND DATE(ae.timestamp) BETWEEN ? AND ?";
+
+        $params = $departmentIds;
+        $params[] = $from;
+        $params[] = $to;
+
+        if ($filterRayon !== '') {
+            $sql .= ' AND TRIM(COALESCE(e.rayon, "")) = ?';
+            $params[] = $filterRayon;
+        }
+
+        if ($filterEmployeeId > 0) {
+            $sql .= ' AND ae.employee_id = ?';
+            $params[] = $filterEmployeeId;
+        }
+
+        $sql .= ' ORDER BY ae.timestamp ASC';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        foreach ($rows as &$e) {
+            $e['timestamp'] = str_replace(' ', 'T', (string) $e['timestamp']);
+        }
+        unset($e);
+
+        json_response([
+            'events' => $rows,
+            'from' => $from,
+            'to' => $to,
+        ]);
+        exit;
+    }
+
     // ---- Action par défaut : données du tableau de bord employé ----
 
     // Infos de l'employe
@@ -151,6 +244,7 @@ try {
                     COALESCE(e.first_name, '') AS first_name,
                     COALESCE(e.last_name, '') AS last_name,
                     e.department_id,
+                                        COALESCE(e.rayon, '') AS rayon,
                     COALESCE(d.name, '') AS department_name
              FROM employees e
              JOIN departments d ON d.id = e.department_id

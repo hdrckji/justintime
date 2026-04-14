@@ -130,8 +130,14 @@ try {
     if (!$column_exists('employees', 'department_id')) {
         $pdo->exec("ALTER TABLE employees ADD COLUMN department_id INT NULL DEFAULT NULL AFTER active");
     }
+    if (!$column_exists('employees', 'rayon')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN rayon VARCHAR(100) NOT NULL DEFAULT '' AFTER department_id");
+    }
     if (!$index_exists('employees', 'idx_employees_department')) {
         $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_department (department_id)");
+    }
+    if (!$index_exists('employees', 'idx_employees_rayon')) {
+        $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_rayon (rayon)");
     }
     if (!$foreign_key_exists('employees', 'fk_employees_department')) {
         try {

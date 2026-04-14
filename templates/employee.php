@@ -259,6 +259,8 @@ if (!$auth['employee_id']) {
               <option value="employee">Vue collaborateur</option>
               <option value="team">Vue toute l'équipe</option>
             </select>
+            <select id="manager-hours-department"></select>
+            <select id="manager-hours-rayon"></select>
             <select id="manager-hours-source">
               <option value="cycle">Cycle (A/B/C)</option>
               <option value="week">Semaine spécifique</option>
@@ -295,6 +297,7 @@ if (!$auth['employee_id']) {
           <h3 style="margin-top:0;">📊 Vue planning équipe (type reporting)</h3>
           <div class="manager-toolbar">
             <select id="manager-report-department"></select>
+            <select id="manager-report-rayon"></select>
             <select id="manager-report-source">
               <option value="cycle">Cycle (A/B/C)</option>
               <option value="week">Semaine spécifique</option>
@@ -341,6 +344,13 @@ if (!$auth['employee_id']) {
           <button class="view-tab" id="tab-week">Semaine</button>
         </div>
         <select id="cal-week" style="min-width:120px; display:none;"></select>
+        <select id="cal-scope" style="min-width:130px; display:none;">
+          <option value="self">Mon calendrier</option>
+          <option value="team">Calendrier équipe</option>
+        </select>
+        <select id="cal-manager-department" style="min-width:160px; display:none;"></select>
+        <select id="cal-manager-rayon" style="min-width:150px; display:none;"></select>
+        <select id="cal-manager-employee" style="min-width:190px; display:none;"></select>
       </div>
 
       <div id="cal-container"><p style="color:var(--ink-soft);">Chargement…</p></div>
@@ -465,6 +475,7 @@ if (!$auth['employee_id']) {
       const scopeText = document.getElementById('manager-scope-text');
       if (!managerState.isManager) {
         panel.style.display = 'none';
+        syncCalendarManagerControls();
         return;
       }
 
@@ -475,13 +486,17 @@ if (!$auth['employee_id']) {
         : 'Vous pouvez gérer les collaborateurs de votre périmètre.';
 
       renderManagerTeamOptions();
+      renderManagerHoursDepartmentOptions();
+      renderManagerHoursRayonOptions();
       renderManagerDepartmentOptions();
+      renderManagerReportRayonOptions();
       updateManagerSourceVisibility();
       updateManagerHoursViewVisibility();
       updateManagerReportSourceVisibility();
       loadManagerSchedule();
       loadManagerReportingView();
       loadManagerVacationRequests();
+      syncCalendarManagerControls();
     }
 
     function toMondayISO(value) {
@@ -538,17 +553,71 @@ if (!$auth['employee_id']) {
       document.getElementById('manager-report-week-start').style.display = source === 'week' ? 'block' : 'none';
     }
 
+    function getManagerRayonsForDepartment(departmentId) {
+      const filtered = managerState.team.filter(emp => !departmentId || Number(emp.department_id) === Number(departmentId));
+      return Array.from(new Set(filtered
+        .map(emp => String(emp.rayon || '').trim())
+        .filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
+    }
+
+    function getFilteredManagerTeam(kind = 'hours') {
+      const departmentSel = kind === 'hours'
+        ? document.getElementById('manager-hours-department')
+        : document.getElementById('manager-report-department');
+      const rayonSel = kind === 'hours'
+        ? document.getElementById('manager-hours-rayon')
+        : document.getElementById('manager-report-rayon');
+
+      const departmentId = Number(departmentSel?.value || 0);
+      const rayon = String(rayonSel?.value || '').trim().toLowerCase();
+
+      return managerState.team.filter(emp => {
+        const matchesDepartment = !departmentId || Number(emp.department_id) === departmentId;
+        const empRayon = String(emp.rayon || '').trim().toLowerCase();
+        const matchesRayon = !rayon || empRayon === rayon;
+        return matchesDepartment && matchesRayon;
+      });
+    }
+
+    function renderManagerHoursDepartmentOptions() {
+      const sel = document.getElementById('manager-hours-department');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Tous les départements</option>' + managerState.departments.map(dep => (
+        `<option value="${dep.id}">${escapeHtml(dep.name)}</option>`
+      )).join('');
+
+      if (current && managerState.departments.some(d => String(d.id) === String(current))) {
+        sel.value = current;
+      }
+    }
+
+    function renderManagerHoursRayonOptions() {
+      const depId = Number(document.getElementById('manager-hours-department').value || 0);
+      const sel = document.getElementById('manager-hours-rayon');
+      const current = sel.value;
+      const rayons = getManagerRayonsForDepartment(depId);
+      sel.innerHTML = '<option value="">Tous les rayons</option>' + rayons.map(r => (
+        `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`
+      )).join('');
+      if (current && rayons.includes(current)) {
+        sel.value = current;
+      }
+    }
+
     function renderManagerTeamOptions() {
       const sel = document.getElementById('manager-team-employee');
       const current = sel.value;
-      sel.innerHTML = '<option value="">Choisir un collaborateur</option>' + managerState.team.map(emp => (
-        `<option value="${emp.id}">${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}${emp.department_name ? ` - ${escapeHtml(emp.department_name)}` : ''}</option>`
+      const team = getFilteredManagerTeam('hours');
+
+      sel.innerHTML = '<option value="">Choisir un collaborateur</option>' + team.map(emp => (
+        `<option value="${emp.id}">${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}${emp.department_name ? ` - ${escapeHtml(emp.department_name)}` : ''}${emp.rayon ? ` (${escapeHtml(emp.rayon)})` : ''}</option>`
       )).join('');
 
-      if (current && managerState.team.some(e => String(e.id) === String(current))) {
+      if (current && team.some(e => String(e.id) === String(current))) {
         sel.value = current;
-      } else if (managerState.team.length) {
-        sel.value = String(managerState.team[0].id);
+      } else if (team.length) {
+        sel.value = String(team[0].id);
       }
     }
 
@@ -564,6 +633,90 @@ if (!$auth['employee_id']) {
       } else if (managerState.departments.length) {
         sel.value = String(managerState.departments[0].id);
       }
+    }
+
+    function renderManagerReportRayonOptions() {
+      const depId = Number(document.getElementById('manager-report-department').value || 0);
+      const sel = document.getElementById('manager-report-rayon');
+      const current = sel.value;
+      const rayons = getManagerRayonsForDepartment(depId);
+      sel.innerHTML = '<option value="">Tous les rayons</option>' + rayons.map(r => (
+        `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`
+      )).join('');
+      if (current && rayons.includes(current)) {
+        sel.value = current;
+      }
+    }
+
+    function renderCalendarDepartmentOptions() {
+      const sel = document.getElementById('cal-manager-department');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Tous les départements</option>' + managerState.departments.map(dep => (
+        `<option value="${dep.id}">${escapeHtml(dep.name)}</option>`
+      )).join('');
+      if (current && managerState.departments.some(d => String(d.id) === String(current))) {
+        sel.value = current;
+      }
+    }
+
+    function renderCalendarRayonOptions() {
+      const depId = Number(document.getElementById('cal-manager-department').value || 0);
+      const sel = document.getElementById('cal-manager-rayon');
+      const current = sel.value;
+      const rayons = getManagerRayonsForDepartment(depId);
+      sel.innerHTML = '<option value="">Tous les rayons</option>' + rayons.map(r => (
+        `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`
+      )).join('');
+      if (current && rayons.includes(current)) {
+        sel.value = current;
+      }
+    }
+
+    function renderCalendarEmployeeOptions() {
+      const depId = Number(document.getElementById('cal-manager-department').value || 0);
+      const rayon = String(document.getElementById('cal-manager-rayon').value || '').trim().toLowerCase();
+      const sel = document.getElementById('cal-manager-employee');
+      const current = sel.value;
+
+      const team = managerState.team.filter(emp => {
+        if (depId > 0 && Number(emp.department_id) !== depId) return false;
+        if (rayon && String(emp.rayon || '').trim().toLowerCase() !== rayon) return false;
+        return true;
+      });
+
+      sel.innerHTML = '<option value="">Tous les collaborateurs</option>' + team.map(emp => (
+        `<option value="${emp.id}">${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}</option>`
+      )).join('');
+
+      if (current && team.some(e => String(e.id) === String(current))) {
+        sel.value = current;
+      }
+    }
+
+    function syncCalendarManagerControls() {
+      const scopeSel = document.getElementById('cal-scope');
+      const depSel = document.getElementById('cal-manager-department');
+      const rayonSel = document.getElementById('cal-manager-rayon');
+      const empSel = document.getElementById('cal-manager-employee');
+
+      if (!managerState.isManager) {
+        scopeSel.style.display = 'none';
+        depSel.style.display = 'none';
+        rayonSel.style.display = 'none';
+        empSel.style.display = 'none';
+        scopeSel.value = 'self';
+        return;
+      }
+
+      scopeSel.style.display = 'block';
+      const isTeam = scopeSel.value === 'team';
+      depSel.style.display = isTeam ? 'block' : 'none';
+      rayonSel.style.display = isTeam ? 'block' : 'none';
+      empSel.style.display = isTeam ? 'block' : 'none';
+
+      renderCalendarDepartmentOptions();
+      renderCalendarRayonOptions();
+      renderCalendarEmployeeOptions();
     }
 
     function renderManagerWeekDetail(rows = []) {
@@ -724,7 +877,7 @@ if (!$auth['employee_id']) {
         ? `Semaine du ${new Date(weekStart + 'T00:00:00').toLocaleDateString('fr-FR')}`
         : `Cycle semaine ${['A', 'B', 'C'][slot - 1]}`;
 
-      const team = managerState.team || [];
+      const team = getFilteredManagerTeam('hours');
       if (!team.length) {
         renderManagerTeamWeekDetail([], headerNote);
         return;
@@ -867,12 +1020,17 @@ if (!$auth['employee_id']) {
 
       const container = document.getElementById('manager-report-grid');
       const departmentId = Number(document.getElementById('manager-report-department').value || 0);
+      const selectedRayon = String(document.getElementById('manager-report-rayon').value || '').trim().toLowerCase();
       if (!departmentId) {
         container.innerHTML = '<p style="color:var(--ink-soft); margin:0;">Choisis un département.</p>';
         return;
       }
 
-      const team = managerState.team.filter(e => Number(e.department_id) === departmentId);
+      const team = managerState.team.filter(e => {
+        if (Number(e.department_id) !== departmentId) return false;
+        if (!selectedRayon) return true;
+        return String(e.rayon || '').trim().toLowerCase() === selectedRayon;
+      });
       if (!team.length) {
         container.innerHTML = '<p style="color:var(--ink-soft); margin:0;">Aucun collaborateur dans ce département.</p>';
         return;
@@ -923,9 +1081,12 @@ if (!$auth['employee_id']) {
         const source = document.getElementById('manager-report-source').value;
         const slot = Number(document.getElementById('manager-report-cycle').value || 1);
         const weekStart = toMondayISO(document.getElementById('manager-report-week-start').value);
-        const headerNote = source === 'week'
+        const headerNoteBase = source === 'week'
           ? `Semaine du ${new Date(weekStart + 'T00:00:00').toLocaleDateString('fr-FR')}`
           : `Cycle semaine ${['A', 'B', 'C'][slot - 1]}`;
+        const headerNote = selectedRayon
+          ? `${headerNoteBase} · rayon ${escapeHtml(document.getElementById('manager-report-rayon').value)}`
+          : headerNoteBase;
 
         container.innerHTML = `
           <p style="margin:0 0 0.45rem; color:var(--ink-soft);">${headerNote} · personnes prévues par heure</p>
@@ -1106,13 +1267,26 @@ if (!$auth['employee_id']) {
     });
 
     document.getElementById('manager-team-employee').addEventListener('change', loadManagerSchedule);
+    document.getElementById('manager-hours-department').addEventListener('change', () => {
+      renderManagerHoursRayonOptions();
+      renderManagerTeamOptions();
+      loadManagerSchedule();
+    });
+    document.getElementById('manager-hours-rayon').addEventListener('change', () => {
+      renderManagerTeamOptions();
+      loadManagerSchedule();
+    });
     document.getElementById('btn-manager-load-hours').addEventListener('click', loadManagerSchedule);
     document.getElementById('btn-manager-save-hours').addEventListener('click', saveManagerSchedule);
     document.getElementById('manager-hours-view').addEventListener('change', () => { updateManagerHoursViewVisibility(); loadManagerSchedule(); });
     document.getElementById('manager-hours-source').addEventListener('change', () => { updateManagerSourceVisibility(); loadManagerSchedule(); });
     document.getElementById('manager-hours-cycle').addEventListener('change', loadManagerSchedule);
     document.getElementById('manager-hours-week-start').addEventListener('change', (e) => { e.target.value = toMondayISO(e.target.value); loadManagerSchedule(); });
-    document.getElementById('manager-report-department').addEventListener('change', loadManagerReportingView);
+    document.getElementById('manager-report-department').addEventListener('change', () => {
+      renderManagerReportRayonOptions();
+      loadManagerReportingView();
+    });
+    document.getElementById('manager-report-rayon').addEventListener('change', loadManagerReportingView);
     document.getElementById('manager-report-source').addEventListener('change', () => { updateManagerReportSourceVisibility(); loadManagerReportingView(); });
     document.getElementById('manager-report-cycle').addEventListener('change', loadManagerReportingView);
     document.getElementById('manager-report-week-start').addEventListener('change', (e) => { e.target.value = toMondayISO(e.target.value); loadManagerReportingView(); });
@@ -1127,6 +1301,7 @@ if (!$auth['employee_id']) {
     let calMonth = new Date().getMonth() + 1; // 1-12
     let calView  = 'month'; // 'month' | 'week'
     let calWeek  = 1;
+    let calScope = 'self';
     let calEvents = []; // cache des évènements chargés
 
     function initCalFilters() {
@@ -1173,6 +1348,15 @@ if (!$auth['employee_id']) {
 
     async function loadCalEvents() {
       let url = `api/me.php?action=history&year=${calYear}&month=${calMonth}`;
+      if (managerState.isManager && calScope === 'team') {
+        const depId = Number(document.getElementById('cal-manager-department').value || 0);
+        const rayon = String(document.getElementById('cal-manager-rayon').value || '').trim();
+        const employeeId = Number(document.getElementById('cal-manager-employee').value || 0);
+        url = `api/me.php?action=manager_history&year=${calYear}&month=${calMonth}`;
+        if (depId > 0) url += `&department_id=${encodeURIComponent(depId)}`;
+        if (rayon) url += `&rayon=${encodeURIComponent(rayon)}`;
+        if (employeeId > 0) url += `&employee_id=${encodeURIComponent(employeeId)}`;
+      }
       if (calView === 'week') url += `&week=${calWeek}`;
       try {
         const data = await apiCall(url);
@@ -1188,6 +1372,35 @@ if (!$auth['employee_id']) {
     }
 
     function dayPillHtml(events) {
+      if (managerState.isManager && calScope === 'team') {
+        const byEmployee = new Map();
+        events.forEach(evt => {
+          const id = Number(evt.employee_id || 0);
+          const key = id > 0 ? id : evt.timestamp;
+          if (!byEmployee.has(key)) {
+            byEmployee.set(key, {
+              first_name: evt.first_name || '',
+              last_name: evt.last_name || '',
+              hasIn: false,
+              hasOut: false,
+              count: 0,
+            });
+          }
+          const entry = byEmployee.get(key);
+          entry.count += 1;
+          if (evt.event_type === 'in') entry.hasIn = true;
+          if (evt.event_type === 'out') entry.hasOut = true;
+        });
+
+        if (!byEmployee.size) return '';
+
+        return Array.from(byEmployee.values()).map(entry => {
+          const cls = entry.hasIn && entry.hasOut ? 'both' : (entry.hasIn ? 'in' : 'out');
+          const name = `${entry.first_name} ${entry.last_name}`.trim() || 'Collaborateur';
+          return `<span class="cal-pill ${cls}" title="${escapeHtml(name)}">${escapeHtml(name)} (${entry.count})</span>`;
+        }).join('');
+      }
+
       const hasIn  = events.some(e => e.event_type === 'in');
       const hasOut = events.some(e => e.event_type === 'out');
       const times  = events.map(e => `${e.event_type === 'in' ? '🟢' : '🔴'} ${e.timestamp.substring(11, 16)}`);
@@ -1298,6 +1511,21 @@ if (!$auth['employee_id']) {
     document.getElementById('cal-week').addEventListener('change', e => {
       calWeek = Number(e.target.value); loadCalEvents();
     });
+    document.getElementById('cal-scope').addEventListener('change', e => {
+      calScope = e.target.value === 'team' ? 'team' : 'self';
+      syncCalendarManagerControls();
+      loadCalEvents();
+    });
+    document.getElementById('cal-manager-department').addEventListener('change', () => {
+      renderCalendarRayonOptions();
+      renderCalendarEmployeeOptions();
+      loadCalEvents();
+    });
+    document.getElementById('cal-manager-rayon').addEventListener('change', () => {
+      renderCalendarEmployeeOptions();
+      loadCalEvents();
+    });
+    document.getElementById('cal-manager-employee').addEventListener('change', loadCalEvents);
     document.getElementById('cal-prev').addEventListener('click', () => {
       if (calMonth === 1) { calMonth = 12; calYear--; } else { calMonth--; }
       calWeek = 1;
