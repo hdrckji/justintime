@@ -75,6 +75,22 @@ for ($offset = 0; $offset < 7; $offset++) {
   $dateByDayNum[$dayNum] = date('Y-m-d', strtotime("+$offset day", strtotime($week_start_selected)));
 }
 
+$dedupePlannedRowsByDay = static function (array $rows): array {
+  $byDay = [];
+  foreach ($rows as $row) {
+    $day = (int) ($row['day_of_week'] ?? -1);
+    if ($day < 0 || $day > 6) {
+      continue;
+    }
+    if (!array_key_exists($day, $byDay)) {
+      $byDay[$day] = $row;
+    }
+  }
+
+  ksort($byDay);
+  return array_values($byDay);
+};
+
   $loadPlannedRowsForEmployee = static function (PDO $pdo, int $employeeId, bool $hasWeekStart, bool $hasRecurrence, string $weekStartSelected): array {
     if ($employeeId <= 0) {
       return [];
@@ -133,7 +149,7 @@ for ($offset = 0; $offset < 7; $offset++) {
       $rows = $stmt->fetchAll();
     }
 
-    return $rows;
+    return $dedupePlannedRowsByDay($rows);
   };
 
   $loadUnavailableDaysForEmployees = static function (PDO $pdo, array $employeeIds, string $weekStartSelected, string $weekEndSelected): array {

@@ -134,6 +134,23 @@ function ensure_scheduled_hours_schema(PDO $pdo): void
     }
 }
 
+function normalize_scheduled_rows(array $rows): array
+{
+    $byDay = [];
+    foreach ($rows as $row) {
+        $day = (int) ($row['day_of_week'] ?? -1);
+        if ($day < 0 || $day > 6) {
+            continue;
+        }
+        if (!array_key_exists($day, $byDay)) {
+            $byDay[$day] = $row;
+        }
+    }
+
+    ksort($byDay);
+    return array_values($byDay);
+}
+
 try {
     $pdo = get_pdo();
     ensure_scheduled_hours_schema($pdo);
@@ -158,10 +175,10 @@ try {
 
         if ($weekStart !== null) {
             $stmt = $pdo->prepare(
-                'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
+                 'SELECT id, day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                  FROM scheduled_hours
                  WHERE employee_id = ? AND week_start = ?
-                 ORDER BY day_of_week'
+                  ORDER BY day_of_week ASC, id DESC'
             );
             $stmt->execute([$emp_id, $weekStart]);
             $rows = $stmt->fetchAll();
@@ -169,23 +186,23 @@ try {
             if (!$rows) {
                 $targetSlot = cycle_slot_for_week($weekStart, $requestedInterval);
                 $stmt = $pdo->prepare(
-                                        'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
+                                                                                'SELECT id, day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                      FROM scheduled_hours
                      WHERE employee_id = ? AND week_start IS NULL
                        AND recurrence_interval = ?
                        AND recurrence_slot = ?
-                     ORDER BY day_of_week'
+                                         ORDER BY day_of_week ASC, id DESC'
                 );
                 $stmt->execute([$emp_id, $requestedInterval, $targetSlot]);
                 $rows = $stmt->fetchAll();
 
                 if (!$rows) {
                     $stmt = $pdo->prepare(
-                                                'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
+                                                                                                'SELECT id, day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                          FROM scheduled_hours
                          WHERE employee_id = ? AND week_start IS NULL
                            AND recurrence_interval = 1
-                         ORDER BY day_of_week'
+                                                 ORDER BY day_of_week ASC, id DESC'
                     );
                     $stmt->execute([$emp_id]);
                     $rows = $stmt->fetchAll();
@@ -193,28 +210,34 @@ try {
             }
         } else {
             $stmt = $pdo->prepare(
-                                'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
+                                                                'SELECT id, day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                  FROM scheduled_hours
                  WHERE employee_id = ? AND week_start IS NULL
                    AND recurrence_interval = ?
                    AND recurrence_slot = ?
-                 ORDER BY day_of_week'
+                                 ORDER BY day_of_week ASC, id DESC'
             );
             $stmt->execute([$emp_id, $requestedInterval, $requestedSlot]);
             $rows = $stmt->fetchAll();
 
             if (!$rows && ($requestedInterval > 1 || $requestedSlot > 1)) {
                 $stmt = $pdo->prepare(
-                                        'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
+                                                                                'SELECT id, day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                      FROM scheduled_hours
                      WHERE employee_id = ? AND week_start IS NULL
                        AND recurrence_interval = 1
-                     ORDER BY day_of_week'
+                                         ORDER BY day_of_week ASC, id DESC'
                 );
                 $stmt->execute([$emp_id]);
                 $rows = $stmt->fetchAll();
             }
         }
+
+                $rows = normalize_scheduled_rows($rows);
+                foreach ($rows as &$row) {
+                        unset($row['id']);
+                }
+                unset($row);
 
         json_response(['hours' => $rows]);
         exit;
