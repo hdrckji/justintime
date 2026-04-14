@@ -141,6 +141,20 @@ function ensure_department_schema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS rayons (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            department_id INT NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_rayons_department_name (department_id, name),
+            INDEX idx_rayons_department (department_id),
+            CONSTRAINT fk_rayons_department
+                FOREIGN KEY (department_id) REFERENCES departments(id)
+                ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
     if (!jit_column_exists($pdo, 'departments', 'manager_employee_id')) {
         $pdo->exec("ALTER TABLE departments ADD COLUMN manager_employee_id INT NULL DEFAULT NULL AFTER name");
     }
@@ -170,12 +184,20 @@ function ensure_department_schema(PDO $pdo): void
         $pdo->exec("ALTER TABLE employees ADD COLUMN rayon VARCHAR(100) NOT NULL DEFAULT '' AFTER department_id");
     }
 
+    if (!jit_column_exists($pdo, 'employees', 'rayon_id')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN rayon_id INT NULL DEFAULT NULL AFTER rayon");
+    }
+
     if (!jit_index_exists($pdo, 'employees', 'idx_employees_department')) {
         $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_department (department_id)");
     }
 
     if (!jit_index_exists($pdo, 'employees', 'idx_employees_rayon')) {
         $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_rayon (rayon)");
+    }
+
+    if (!jit_index_exists($pdo, 'employees', 'idx_employees_rayon_id')) {
+        $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_rayon_id (rayon_id)");
     }
 
     if (!jit_foreign_key_exists($pdo, 'employees', 'fk_employees_department')) {
@@ -189,6 +211,41 @@ function ensure_department_schema(PDO $pdo): void
         } catch (Throwable $e) {
             // Ignorer si la contrainte existe deja sous un autre nom.
         }
+    }
+
+    if (!jit_foreign_key_exists($pdo, 'employees', 'fk_employees_rayon')) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE employees
+                 ADD CONSTRAINT fk_employees_rayon
+                 FOREIGN KEY (rayon_id) REFERENCES rayons(id)
+                 ON DELETE SET NULL"
+            );
+        } catch (Throwable $e) {
+            // Ignorer si la contrainte existe deja sous un autre nom.
+        }
+    }
+
+    // Migration de compatibilite: convertir employees.rayon (texte) en rayons normalises.
+    if (jit_table_exists($pdo, 'rayons') && jit_column_exists($pdo, 'employees', 'rayon')) {
+        $pdo->exec(
+            "INSERT IGNORE INTO rayons (department_id, name)
+             SELECT e.department_id, TRIM(e.rayon)
+             FROM employees e
+             WHERE e.department_id IS NOT NULL
+               AND TRIM(COALESCE(e.rayon, '')) <> ''"
+        );
+
+        $pdo->exec(
+            "UPDATE employees e
+             JOIN rayons r
+               ON r.department_id = e.department_id
+              AND r.name = TRIM(COALESCE(e.rayon, ''))
+             SET e.rayon_id = r.id
+             WHERE e.department_id IS NOT NULL
+               AND TRIM(COALESCE(e.rayon, '')) <> ''
+               AND (e.rayon_id IS NULL OR e.rayon_id = 0)"
+        );
     }
 }
 

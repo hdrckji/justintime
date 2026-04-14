@@ -25,6 +25,40 @@ try {
              ORDER BY d.name ASC"
         )->fetchAll();
 
+        if (jit_table_exists($pdo, 'rayons')) {
+            $rayons = $pdo->query(
+                "SELECT id, department_id, name
+                 FROM rayons
+                 ORDER BY department_id ASC, name ASC"
+            )->fetchAll();
+
+            $rayonsByDepartment = [];
+            foreach ($rayons as $rayon) {
+                $departmentId = (int) ($rayon['department_id'] ?? 0);
+                if ($departmentId <= 0) {
+                    continue;
+                }
+                if (!isset($rayonsByDepartment[$departmentId])) {
+                    $rayonsByDepartment[$departmentId] = [];
+                }
+                $rayonsByDepartment[$departmentId][] = [
+                    'id' => (int) ($rayon['id'] ?? 0),
+                    'name' => (string) ($rayon['name'] ?? ''),
+                ];
+            }
+
+            foreach ($departments as &$department) {
+                $depId = (int) ($department['id'] ?? 0);
+                $department['rayons'] = $rayonsByDepartment[$depId] ?? [];
+            }
+            unset($department);
+        } else {
+            foreach ($departments as &$department) {
+                $department['rayons'] = [];
+            }
+            unset($department);
+        }
+
         json_response(['departments' => $departments]);
         exit;
     }
@@ -35,6 +69,57 @@ try {
     }
 
     $payload = json_decode(file_get_contents('php://input'), true) ?? [];
+
+    if ($action === 'create_rayon') {
+        $departmentId = isset($payload['department_id']) ? (int) $payload['department_id'] : 0;
+        $name = trim((string) ($payload['name'] ?? ''));
+
+        if ($departmentId <= 0 || $name === '') {
+            json_response(['error' => 'Departement et nom du rayon obligatoires.'], 400);
+            exit;
+        }
+
+        $stmt = $pdo->prepare('SELECT id FROM departments WHERE id = ? LIMIT 1');
+        $stmt->execute([$departmentId]);
+        if (!$stmt->fetch()) {
+            json_response(['error' => 'Departement introuvable.'], 404);
+            exit;
+        }
+
+        $stmt = $pdo->prepare('INSERT INTO rayons (department_id, name) VALUES (?, ?)');
+        $stmt->execute([$departmentId, $name]);
+
+        json_response([
+            'message' => 'Rayon ajoute.',
+            'rayon' => [
+                'id' => (int) $pdo->lastInsertId(),
+                'department_id' => $departmentId,
+                'name' => $name,
+            ],
+        ], 201);
+        exit;
+    }
+
+    if ($action === 'delete_rayon') {
+        $id = (int) ($_GET['id'] ?? ($payload['id'] ?? 0));
+        if ($id <= 0) {
+            json_response(['error' => 'Rayon invalide.'], 400);
+            exit;
+        }
+
+        $stmt = $pdo->prepare('SELECT id FROM rayons WHERE id = ? LIMIT 1');
+        $stmt->execute([$id]);
+        if (!$stmt->fetch()) {
+            json_response(['error' => 'Rayon introuvable.'], 404);
+            exit;
+        }
+
+        $stmt = $pdo->prepare('DELETE FROM rayons WHERE id = ?');
+        $stmt->execute([$id]);
+
+        json_response(['message' => 'Rayon supprime.']);
+        exit;
+    }
 
     if ($action === 'create' || $action === 'save') {
         $name = trim((string) ($payload['name'] ?? ''));
@@ -150,7 +235,7 @@ try {
         $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
         if ($sqlState === '23000') {
             $status = 409;
-            $message = 'Ce departement existe deja.';
+            $message = 'Cette valeur existe deja (departement ou rayon).';
         }
     }
 

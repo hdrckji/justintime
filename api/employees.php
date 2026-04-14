@@ -48,6 +48,7 @@ try {
     $has_vac   = has_col($emp_cols, 'vacation_days');
     $has_department = has_col($emp_cols, 'department_id') && table_exists($pdo, 'departments');
     $has_rayon = has_col($emp_cols, 'rayon');
+    $has_rayon_id = has_col($emp_cols, 'rayon_id') && table_exists($pdo, 'rayons');
     $has_allowed_locations = table_exists($pdo, 'employee_allowed_locations');
     $has_user_employee_id = has_col($usr_cols, 'employee_id');
 
@@ -72,7 +73,16 @@ try {
         $vac_expr     = $has_vac ? "COALESCE(e.vacation_days, 25) AS vacation_days" : "25 AS vacation_days";
         $department_id_expr = $has_department ? "e.department_id" : "NULL AS department_id";
         $department_name_expr = $has_department ? "COALESCE(d.name, '') AS department_name" : "'' AS department_name";
-        $rayon_expr = $has_rayon ? "COALESCE(e.rayon, '') AS rayon" : "'' AS rayon";
+        $rayon_id_expr = $has_rayon_id ? "e.rayon_id" : "NULL AS rayon_id";
+        if ($has_rayon_id && $has_rayon) {
+            $rayon_expr = "COALESCE(r.name, e.rayon, '') AS rayon";
+        } elseif ($has_rayon_id) {
+            $rayon_expr = "COALESCE(r.name, '') AS rayon";
+        } elseif ($has_rayon) {
+            $rayon_expr = "COALESCE(e.rayon, '') AS rayon";
+        } else {
+            $rayon_expr = "'' AS rayon";
+        }
         $login_expr   = $has_user_employee_id
             ? "(SELECT u.username FROM users u WHERE u.employee_id = e.id AND u.role = 'employee' LIMIT 1) AS login_username"
             : "NULL AS login_username";
@@ -80,6 +90,7 @@ try {
         $order_by = $has_last && $has_first ? 'e.last_name, e.first_name' : 'e.id DESC';
         $where    = $include_inactive ? '' : 'WHERE e.active = 1';
         $join_departments = $has_department ? 'LEFT JOIN departments d ON d.id = e.department_id' : '';
+        $join_rayons = $has_rayon_id ? 'LEFT JOIN rayons r ON r.id = e.rayon_id' : '';
 
         $sql = "SELECT e.id,
                 {$first_expr},
@@ -93,10 +104,13 @@ try {
                 {$vac_expr},
                 {$department_id_expr},
                 {$department_name_expr},
+                 {$rayon_id_expr},
                      {$rayon_expr},
                 {$login_expr}
              FROM employees e
              {$join_departments}
+             {$join_rayons}
+
              {$where}
              ORDER BY {$order_by}";
 
@@ -257,6 +271,9 @@ try {
         $department_id = isset($payload['department_id']) && (int) $payload['department_id'] > 0
             ? (int) $payload['department_id']
             : null;
+        $rayon_id = isset($payload['rayon_id']) && (int) $payload['rayon_id'] > 0
+            ? (int) $payload['rayon_id']
+            : null;
         $rayon = trim((string) ($payload['rayon'] ?? ''));
 
         if (!$first || !$last || !$badge) {
@@ -271,6 +288,24 @@ try {
                 json_response(['error' => 'Departement introuvable.'], 400);
                 exit;
             }
+        }
+
+        if ($has_rayon_id && $rayon_id !== null) {
+            if ($department_id === null) {
+                json_response(['error' => 'Selectionnez un departement avant le rayon.'], 400);
+                exit;
+            }
+
+            $stmt = $pdo->prepare('SELECT name FROM rayons WHERE id = ? AND department_id = ? LIMIT 1');
+            $stmt->execute([$rayon_id, $department_id]);
+            $rayonRow = $stmt->fetch();
+            if (!$rayonRow) {
+                json_response(['error' => 'Rayon introuvable pour ce departement.'], 400);
+                exit;
+            }
+            $rayon = (string) ($rayonRow['name'] ?? '');
+        } elseif ($has_rayon_id) {
+            $rayon = '';
         }
 
         if ($id) {
@@ -326,6 +361,10 @@ try {
             if ($has_rayon) {
                 $set[] = 'rayon = ?';
                 $vals[] = $rayon;
+            }
+            if ($has_rayon_id) {
+                $set[] = 'rayon_id = ?';
+                $vals[] = $rayon_id;
             }
 
             $vals[] = $id;
@@ -399,6 +438,11 @@ try {
             if ($has_rayon) {
                 $cols[] = 'rayon';
                 $vals[] = $rayon;
+                $phs[] = '?';
+            }
+            if ($has_rayon_id) {
+                $cols[] = 'rayon_id';
+                $vals[] = $rayon_id;
                 $phs[] = '?';
             }
 

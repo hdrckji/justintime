@@ -127,17 +127,36 @@ try {
             created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS rayons (
+            id            INT           PRIMARY KEY AUTO_INCREMENT,
+            department_id INT           NOT NULL,
+            name          VARCHAR(100)  NOT NULL,
+            created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_rayons_department_name (department_id, name),
+            INDEX idx_rayons_department (department_id),
+            CONSTRAINT fk_rayons_department
+                FOREIGN KEY (department_id) REFERENCES departments(id)
+                ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
     if (!$column_exists('employees', 'department_id')) {
         $pdo->exec("ALTER TABLE employees ADD COLUMN department_id INT NULL DEFAULT NULL AFTER active");
     }
     if (!$column_exists('employees', 'rayon')) {
         $pdo->exec("ALTER TABLE employees ADD COLUMN rayon VARCHAR(100) NOT NULL DEFAULT '' AFTER department_id");
     }
+    if (!$column_exists('employees', 'rayon_id')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN rayon_id INT NULL DEFAULT NULL AFTER rayon");
+    }
     if (!$index_exists('employees', 'idx_employees_department')) {
         $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_department (department_id)");
     }
     if (!$index_exists('employees', 'idx_employees_rayon')) {
         $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_rayon (rayon)");
+    }
+    if (!$index_exists('employees', 'idx_employees_rayon_id')) {
+        $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_rayon_id (rayon_id)");
     }
     if (!$foreign_key_exists('employees', 'fk_employees_department')) {
         try {
@@ -151,6 +170,35 @@ try {
             // Ignore si la contrainte existe deja sous un autre nom.
         }
     }
+    if (!$foreign_key_exists('employees', 'fk_employees_rayon')) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE employees
+                 ADD CONSTRAINT fk_employees_rayon
+                 FOREIGN KEY (rayon_id) REFERENCES rayons(id)
+                 ON DELETE SET NULL"
+            );
+        } catch (Throwable $e) {
+            // Ignore si la contrainte existe deja sous un autre nom.
+        }
+    }
+    $pdo->exec(
+        "INSERT IGNORE INTO rayons (department_id, name)
+         SELECT e.department_id, TRIM(e.rayon)
+         FROM employees e
+         WHERE e.department_id IS NOT NULL
+           AND TRIM(COALESCE(e.rayon, '')) <> ''"
+    );
+    $pdo->exec(
+        "UPDATE employees e
+         JOIN rayons r
+           ON r.department_id = e.department_id
+          AND r.name = TRIM(COALESCE(e.rayon, ''))
+         SET e.rayon_id = r.id
+         WHERE e.department_id IS NOT NULL
+           AND TRIM(COALESCE(e.rayon, '')) <> ''
+           AND (e.rayon_id IS NULL OR e.rayon_id = 0)"
+    );
     $output[] = '✅ Gestion des departements OK.';
 
     $pdo->exec(

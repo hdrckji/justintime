@@ -425,7 +425,9 @@ $user = get_auth_user();
           </div>
           <div class="form-group" style="margin-bottom: 0;">
             <label for="emp-rayon">Rayon</label>
-            <input id="emp-rayon" type="text" placeholder="Ex: Fruits et legumes" />
+            <select id="emp-rayon">
+              <option value="">Aucun rayon</option>
+            </select>
           </div>
         </div>
         <div class="form-grid-auto" style="margin-top: 0.5rem;">
@@ -475,7 +477,7 @@ $user = get_auth_user();
             </div>
           </form>
           <p style="color: var(--ink-soft); font-size: 0.9rem; margin: 0;">
-            Pour rattacher ou retirer un collaborateur, utilisez simplement le champ <strong>Departement</strong> dans le formulaire ci-dessus.
+            Creez les rayons par departement ici, puis choisissez <strong>Departement + Rayon</strong> dans le formulaire collaborateur.
           </p>
         </div>
         <div>
@@ -963,6 +965,7 @@ $user = get_auth_user();
     // Collaborateurs
     let empCache = [];
     let departmentsCache = [];
+    let rayonsByDepartment = {};
     const panelLoadState = {
       departments: false,
       absences: false,
@@ -1102,6 +1105,27 @@ $user = get_auth_user();
       } else {
         els.empDepartment.value = '';
       }
+
+      renderRayonOptions();
+    }
+
+    function renderRayonOptions(preferredValue = '') {
+      const departmentId = Number(els.empDepartment.value || 0);
+      const rayons = departmentId > 0 ? (rayonsByDepartment[departmentId] || []) : [];
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.empRayon.value || '');
+
+      els.empRayon.innerHTML = [
+        '<option value="">Aucun rayon</option>',
+        ...rayons.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`),
+      ].join('');
+
+      if (wanted && rayons.some(r => String(r.id) === wanted)) {
+        els.empRayon.value = wanted;
+      } else {
+        els.empRayon.value = '';
+      }
     }
 
     function renderDepartmentManagerOptions(preferredValue = '') {
@@ -1202,6 +1226,13 @@ $user = get_auth_user();
         const prevPayrollDepartment = els.payrollDepartment.value;
         const data = await api('api/departments.php?action=list');
         departmentsCache = Array.isArray(data.departments) ? data.departments : [];
+        rayonsByDepartment = departmentsCache.reduce((acc, dep) => {
+          const depId = Number(dep.id || 0);
+          if (depId > 0) {
+            acc[depId] = Array.isArray(dep.rayons) ? dep.rayons : [];
+          }
+          return acc;
+        }, {});
         renderDepartmentOptions(preferredValue);
         renderHoursViewDepartmentOptions(prevHoursViewDepartment);
         renderPayrollDepartmentOptions(prevPayrollDepartment);
@@ -1219,6 +1250,19 @@ $user = get_auth_user();
                       ${empCache.map(e => `<option value="${e.id}" ${String(d.manager_employee_id || '') === String(e.id) ? 'selected' : ''}>${e.first_name} ${e.last_name}</option>`).join('')}
                     </select>
                     <button class="btn-edit" onclick="updateDepartmentManager(${d.id})">Affecter</button>
+                  </div>
+                  <label style="display:block; margin-top:0.55rem;">Rayons</label>
+                  <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.2rem;">
+                    <input id="dept-rayon-name-${d.id}" type="text" placeholder="Ex: Fruits et legumes" style="min-width:200px; flex:1;" />
+                    <button class="btn-in" onclick="addDepartmentRayon(${d.id})">Ajouter rayon</button>
+                  </div>
+                  <div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin-top:0.35rem;">
+                    ${(Array.isArray(d.rayons) ? d.rayons : []).map(r => `
+                      <span style="display:inline-flex; align-items:center; gap:0.3rem; border:1px solid var(--line); border-radius:999px; padding:0.18rem 0.5rem;">
+                        <small>${escapeHtml(r.name)}</small>
+                        <button class="btn-delete" style="padding:0.1rem 0.45rem; line-height:1;" onclick="deleteDepartmentRayon(${r.id})">×</button>
+                      </span>
+                    `).join('') || '<small style="color:var(--ink-soft);">Aucun rayon</small>'}
                   </div>
                 </div>
                 <button class="btn-delete" onclick="deleteDepartment(${d.id})">Supprimer</button>
@@ -1276,6 +1320,7 @@ $user = get_auth_user();
         const preferredId = currentEditId || prevHoursValue;
         const currentEmployee = data.employees.find(e => String(e.id) === String(currentEditId));
         renderDepartmentOptions(currentEmployee ? currentEmployee.department_id : '');
+        renderRayonOptions(currentEmployee ? currentEmployee.rayon_id : '');
         renderDepartmentManagerOptions();
 
         if (existingIds.has(prevAbsValue)) {
@@ -1317,7 +1362,10 @@ $user = get_auth_user();
       els.empBadge.value  = emp.badge_id;
       els.empActive.value = emp.active;
       els.empDepartment.value = emp.department_id ? String(emp.department_id) : '';
-      els.empRayon.value = emp.rayon || '';
+      const rayons = rayonsByDepartment[Number(emp.department_id || 0)] || [];
+      const rayonMatch = rayons.find(r => String(r.name || '').toLowerCase() === String(emp.rayon || '').toLowerCase());
+      const preferredRayonId = emp.rayon_id ? String(emp.rayon_id) : (rayonMatch ? String(rayonMatch.id) : '');
+      renderRayonOptions(preferredRayonId);
       els.empAddress.value = emp.address || '';
       els.empLat.value     = emp.latitude ?? '';
       els.empLng.value     = emp.longitude ?? '';
@@ -1351,7 +1399,7 @@ $user = get_auth_user();
             badge_id: els.empBadge.value,
             active: els.empActive.value,
             department_id: els.empDepartment.value || null,
-            rayon: els.empRayon.value.trim(),
+            rayon_id: els.empRayon.value || null,
             address: els.empAddress.value,
             latitude: els.empLat.value !== '' ? parseFloat(els.empLat.value) : null,
             longitude: els.empLng.value !== '' ? parseFloat(els.empLng.value) : null,
@@ -1364,7 +1412,7 @@ $user = get_auth_user();
         showToast('Collaborateur enregistre');
         els.empForm.reset();
         els.empDepartment.value = '';
-        els.empRayon.value = '';
+        renderRayonOptions('');
         els.empTeleworkEnabled.checked = false;
         renderAllowedLocations([]);
         toggleTeleworkLocationsVisibility();
@@ -1425,6 +1473,46 @@ $user = get_auth_user();
         showToast(e.message, true);
       }
     };
+
+    window.addDepartmentRayon = async (departmentId) => {
+      const input = document.getElementById(`dept-rayon-name-${departmentId}`);
+      if (!input) {
+        showToast('Champ rayon introuvable.', true);
+        return;
+      }
+      const name = input.value.trim();
+      if (!name) {
+        showToast('Indiquez un nom de rayon.', true);
+        return;
+      }
+
+      try {
+        await api('api/departments.php?action=create_rayon', {
+          method: 'POST',
+          body: JSON.stringify({ department_id: Number(departmentId), name }),
+        });
+        showToast('Rayon ajoute');
+        input.value = '';
+        await loadDepartments();
+        renderRayonOptions();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    };
+
+    window.deleteDepartmentRayon = async (rayonId) => {
+      if (!confirm('Supprimer ce rayon ?')) return;
+      try {
+        await api('api/departments.php?action=delete_rayon&id=' + encodeURIComponent(rayonId), { method: 'POST' });
+        showToast('Rayon supprime');
+        await loadDepartments();
+        renderRayonOptions();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    };
+
+    els.empDepartment.addEventListener('change', () => renderRayonOptions(''));
 
     // Absences
     async function loadAbsences() {
