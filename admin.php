@@ -679,6 +679,7 @@ $user = get_auth_user();
         </div>
 
         <button type="button" id="btn-print-hours" class="btn-edit" style="margin-top: 0.2rem;">🖨️ Imprimer la semaine</button>
+        <button type="button" id="btn-clean-hours-duplicates" class="btn-delete" style="margin-top: 0.2rem;">🧹 Nettoyer les doublons horaires</button>
 
         <div id="hours-balance-summary" class="hours-balance-summary"></div>
         <div id="hours-visual-container"></div>
@@ -908,6 +909,7 @@ $user = get_auth_user();
       hoursViewWeekWrap: document.getElementById('hours-view-week-wrap'),
       hoursViewWeekStart: document.getElementById('hours-view-week-start'),
       btnPrintHours: document.getElementById('btn-print-hours'),
+      btnCleanHoursDuplicates: document.getElementById('btn-clean-hours-duplicates'),
       hoursBalanceSummary: document.getElementById('hours-balance-summary'),
       hoursVisualContainer: document.getElementById('hours-visual-container'),
       payrollPeriod: document.getElementById('payroll-period'),
@@ -2042,6 +2044,26 @@ $user = get_auth_user();
       }
     }
 
+    async function cleanupDuplicateSchedules() {
+      if (!confirm('Lancer le nettoyage des doublons d\'horaires en base ?')) {
+        return;
+      }
+
+      try {
+        const result = await api('api/scheduled_hours.php?action=cleanup_duplicates', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
+
+        showToast(
+          `Nettoyage termine: ${result.deleted_rows || 0} supprimes (${result.duplicate_rows_before || 0} -> ${result.duplicate_rows_after || 0}).`
+        );
+        loadHoursVisual();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
     function ensurePayrollPeriodDefault() {
       if (!els.payrollPeriod.value) {
         els.payrollPeriod.value = new Date().toISOString().slice(0, 7);
@@ -2308,6 +2330,7 @@ $user = get_auth_user();
         showToast(e.message, true);
       }
     });
+    els.btnCleanHoursDuplicates.addEventListener('click', cleanupDuplicateSchedules);
 
     els.hoursGrid.addEventListener('input', calcAndRenderHoursSummary);
     els.hoursGrid.addEventListener('change', calcAndRenderHoursSummary);

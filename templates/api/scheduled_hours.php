@@ -279,6 +279,70 @@ try {
         exit;
     }
 
+    if ($action === 'cleanup_duplicates') {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            json_response(['error' => 'Methode non autorisee.'], 405);
+            exit;
+        }
+
+        if (($auth['role'] ?? '') !== 'admin') {
+            json_response(['error' => 'Acces reserve aux administrateurs.'], 403);
+            exit;
+        }
+
+        $dupRowsBefore = (int) $pdo->query(
+            'SELECT COALESCE(SUM(c-1),0)
+             FROM (
+               SELECT COUNT(*) AS c
+               FROM scheduled_hours
+               GROUP BY employee_id, day_of_week, COALESCE(week_start, "1000-01-01"), recurrence_interval, recurrence_slot
+               HAVING c > 1
+             ) t'
+        )->fetchColumn();
+
+        $deletedRows = 0;
+        if ($dupRowsBefore > 0) {
+            $pdo->beginTransaction();
+            try {
+                $deletedRows = (int) $pdo->exec(
+                    'DELETE s1
+                     FROM scheduled_hours s1
+                     JOIN scheduled_hours s2
+                       ON s1.employee_id = s2.employee_id
+                      AND s1.day_of_week = s2.day_of_week
+                      AND COALESCE(s1.week_start, "1000-01-01") = COALESCE(s2.week_start, "1000-01-01")
+                      AND s1.recurrence_interval = s2.recurrence_interval
+                      AND s1.recurrence_slot = s2.recurrence_slot
+                      AND s1.id < s2.id'
+                );
+                $pdo->commit();
+            } catch (Throwable $cleanupError) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $cleanupError;
+            }
+        }
+
+        $dupRowsAfter = (int) $pdo->query(
+            'SELECT COALESCE(SUM(c-1),0)
+             FROM (
+               SELECT COUNT(*) AS c
+               FROM scheduled_hours
+               GROUP BY employee_id, day_of_week, COALESCE(week_start, "1000-01-01"), recurrence_interval, recurrence_slot
+               HAVING c > 1
+             ) t'
+        )->fetchColumn();
+
+        json_response([
+            'message' => 'Nettoyage des doublons termine.',
+            'duplicate_rows_before' => $dupRowsBefore,
+            'deleted_rows' => $deletedRows,
+            'duplicate_rows_after' => $dupRowsAfter,
+        ]);
+        exit;
+    }
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $payload = json_decode(file_get_contents('php://input'), true) ?? [];
         $emp_id = (int) ($payload['employee_id'] ?? 0);
