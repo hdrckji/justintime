@@ -157,6 +157,8 @@ if (!$auth['employee_id']) {
     .manager-team-table th, .manager-team-table td { border: 1px solid var(--line); padding: 0.4rem; text-align: center; }
     .manager-team-table th:first-child, .manager-team-table td:first-child { text-align: left; min-width: 220px; }
     .manager-team-table .sum { font-weight: 700; }
+    .manager-team-cell-range { display:block; font-size:0.74rem; color: var(--ink-soft); line-height:1.2; margin-bottom: 0.15rem; }
+    .manager-team-cell-hours { display:block; font-weight:600; line-height:1.2; }
     .manager-muted { color: var(--ink-soft); margin: 0; }
     .manager-heatmap-wrap { overflow-x: auto; }
     .manager-heatmap { width: 100%; border-collapse: collapse; min-width: 760px; }
@@ -634,14 +636,18 @@ if (!$auth['employee_id']) {
 
       const totalByDay = Array(7).fill(0);
       const bodyRows = teamRows.map(item => {
-        const byDay = new Map((item.rows || []).map(r => [Number(r.day_of_week), Number(r.hours || 0)]));
+        const byDay = new Map((item.rows || []).map(r => [Number(r.day_of_week), r]));
         const values = order.map((day, idx) => {
-          const hours = Number(byDay.get(day) || 0);
+          const row = byDay.get(day);
+          const hours = Number(row?.hours || 0);
+          const range = row && row.start_time && row.end_time
+            ? `${String(row.start_time).slice(0, 5)} - ${String(row.end_time).slice(0, 5)}`
+            : '—';
           totalByDay[idx] += hours;
-          return `<td>${hours.toFixed(2)} h</td>`;
+          return `<td><span class="manager-team-cell-range">${escapeHtml(range)}</span><span class="manager-team-cell-hours">${hours.toFixed(2)} h</span></td>`;
         }).join('');
 
-        const total = order.reduce((acc, day) => acc + Number(byDay.get(day) || 0), 0);
+        const total = order.reduce((acc, day) => acc + Number(byDay.get(day)?.hours || 0), 0);
         return `
           <tr>
             <td>${escapeHtml(item.name)}</td>
