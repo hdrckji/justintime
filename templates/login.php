@@ -11,13 +11,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
+  try {
     if (login(get_pdo(), $username, $password)) {
-        $authUser = get_auth_user();
-        header('Location: ' . (!empty($authUser['employee_id']) ? 'employee.php' : 'dashboard.php'));
-        exit;
+      $authUser = get_auth_user();
+      header('Location: ' . (!empty($authUser['employee_id']) ? 'employee.php' : 'dashboard.php'));
+      exit;
     }
 
     $error = 'Identifiants invalides.';
+  } catch (Throwable $e) {
+    $error = 'Base de donnees indisponible pour le moment. Reessaie dans quelques secondes.';
+    error_log('Erreur connexion DB login: ' . $e->getMessage());
+  }
 }
 ?>
 <!doctype html>

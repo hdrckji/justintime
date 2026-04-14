@@ -1,6 +1,66 @@
 <?php
 require_once __DIR__ . '/config.php';
 
+function jit_parse_mysql_url_to_dsn(string $url): ?array
+{
+    $parts = parse_url($url);
+    if (!is_array($parts) || (($parts['scheme'] ?? '') !== 'mysql')) {
+        return null;
+    }
+
+    $host = (string) ($parts['host'] ?? '');
+    $port = (int) ($parts['port'] ?? 3306);
+    $name = isset($parts['path']) ? ltrim((string) $parts['path'], '/') : '';
+    $user = (string) ($parts['user'] ?? DB_USER);
+    $pass = (string) ($parts['pass'] ?? DB_PASS);
+
+    if ($host === '' || $name === '') {
+        return null;
+    }
+
+    return [
+        'dsn' => sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $host, $port, $name),
+        'user' => $user,
+        'pass' => $pass,
+        'label' => $host . ':' . $port,
+    ];
+}
+
+function jit_db_connection_candidates(): array
+{
+    $candidates = [];
+
+    foreach (['MYSQL_URL', 'DATABASE_URL'] as $urlVar) {
+        $url = getenv($urlVar);
+        if ($url === false || trim($url) === '') {
+            continue;
+        }
+        $parsed = jit_parse_mysql_url_to_dsn((string) $url);
+        if ($parsed !== null) {
+            $candidates[] = $parsed;
+        }
+    }
+
+    $hosts = [];
+    foreach ([DB_HOST, getenv('MYSQLHOST'), getenv('DB_HOST'), getenv('MYSQLHOST_PRIVATE'), getenv('MYSQLHOST_PUBLIC')] as $host) {
+        $host = trim((string) ($host ?? ''));
+        if ($host !== '' && !in_array($host, $hosts, true)) {
+            $hosts[] = $host;
+        }
+    }
+
+    foreach ($hosts as $host) {
+        $candidates[] = [
+            'dsn' => sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $host, DB_PORT, DB_NAME),
+            'user' => DB_USER,
+            'pass' => DB_PASS,
+            'label' => $host . ':' . DB_PORT,
+        ];
+    }
+
+    return $candidates;
+}
+
 function get_pdo(): PDO
 {
     static $pdo = null;
@@ -11,18 +71,34 @@ function get_pdo(): PDO
     }
 
     if ($pdo === null) {
-        $dsn = sprintf(
-            'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
-            DB_HOST,
-            DB_PORT,
-            DB_NAME
-        );
-
-        $pdo = new PDO($dsn, DB_USER, DB_PASS, [
+        $options = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
-        ]);
+            PDO::ATTR_TIMEOUT            => 5,
+        ];
+
+        $errors = [];
+        foreach (jit_db_connection_candidates() as $candidate) {
+            $dsn = $candidate['dsn'];
+            $user = $candidate['user'];
+            $pass = $candidate['pass'];
+            $label = $candidate['label'];
+
+            for ($attempt = 1; $attempt <= 3; $attempt++) {
+                try {
+                    $pdo = new PDO($dsn, $user, $pass, $options);
+                    break 2;
+                } catch (PDOException $e) {
+                    $errors[] = "{$label} tentative {$attempt}: " . $e->getMessage();
+                    usleep(250000);
+                }
+            }
+        }
+
+        if ($pdo === null) {
+            throw new RuntimeException('Connexion base de donnees impossible. Verifiez les variables Railway (MYSQLHOST/MYSQLPORT/MYSQLDATABASE/MYSQLUSER/MYSQLPASSWORD). Detail: ' . implode(' | ', array_slice($errors, -3)));
+        }
     }
 
     if (!$schema_ensured) {
