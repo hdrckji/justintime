@@ -252,7 +252,7 @@ if (!$auth['employee_id']) {
       <p id="manager-scope-text" style="color: var(--ink-soft); margin-top: 0;">Chargement du périmètre manager...</p>
 
       <div class="manager-grid">
-        <div class="manager-panel">
+        <div class="manager-panel manager-panel-full">
           <h3 style="margin-top:0;">🕒 Horaires des collaborateurs</h3>
           <div class="manager-toolbar">
             <select id="manager-hours-view">
@@ -291,7 +291,7 @@ if (!$auth['employee_id']) {
           </div>
         </div>
 
-        <div class="manager-panel">
+        <div class="manager-panel manager-panel-full">
           <h3 style="margin-top:0;">📊 Vue planning équipe (type reporting)</h3>
           <div class="manager-toolbar">
             <select id="manager-report-department"></select>
