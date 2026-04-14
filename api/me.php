@@ -164,6 +164,121 @@ try {
         exit;
     }
 
+    if ($action === 'manager_unavailable_days') {
+        $managedDepartmentIds = jit_get_managed_department_ids($pdo, $emp_id);
+        if (!$managedDepartmentIds) {
+            json_response(['error' => 'Acces manager requis.'], 403);
+            exit;
+        }
+
+        $weekStart = trim((string) ($_GET['week_start'] ?? ''));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $weekStart)) {
+            $weekStart = date('Y-m-d', strtotime('monday this week'));
+        }
+        $weekEnd = date('Y-m-d', strtotime($weekStart . ' +6 day'));
+
+        $filterDepartmentId = isset($_GET['department_id']) ? (int) $_GET['department_id'] : 0;
+        $filterEmployeeId = isset($_GET['employee_id']) ? (int) $_GET['employee_id'] : 0;
+        $filterRayon = trim((string) ($_GET['rayon'] ?? ''));
+
+        $departmentIds = $managedDepartmentIds;
+        if ($filterDepartmentId > 0) {
+            if (!in_array($filterDepartmentId, $managedDepartmentIds, true)) {
+                json_response(['error' => 'Departement hors perimetre manager.'], 403);
+                exit;
+            }
+            $departmentIds = [$filterDepartmentId];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($departmentIds), '?'));
+        $scopeSql =
+            "SELECT id
+             FROM employees
+             WHERE active = 1
+               AND department_id IN ($placeholders)";
+
+        $scopeParams = $departmentIds;
+
+        if ($filterRayon !== '') {
+            $scopeSql .= ' AND TRIM(COALESCE(rayon, "")) = ?';
+            $scopeParams[] = $filterRayon;
+        }
+
+        if ($filterEmployeeId > 0) {
+            $scopeSql .= ' AND id = ?';
+            $scopeParams[] = $filterEmployeeId;
+        }
+
+        $scopeStmt = $pdo->prepare($scopeSql);
+        $scopeStmt->execute($scopeParams);
+        $employeeIds = array_map('intval', $scopeStmt->fetchAll(PDO::FETCH_COLUMN));
+
+        if (!$employeeIds) {
+            json_response([
+                'week_start' => $weekStart,
+                'week_end' => $weekEnd,
+                'unavailable_by_employee' => [],
+            ]);
+            exit;
+        }
+
+        $empPlaceholders = implode(',', array_fill(0, count($employeeIds), '?'));
+        $absenceSql =
+            "SELECT employee_id, start_date, end_date
+             FROM absences
+             WHERE employee_id IN ($empPlaceholders)
+               AND end_date >= ?
+               AND start_date <= ?";
+        $absenceStmt = $pdo->prepare($absenceSql);
+        $absenceStmt->execute(array_merge($employeeIds, [$weekStart, $weekEnd]));
+        $absenceRows = $absenceStmt->fetchAll();
+
+        $vacationSql =
+            "SELECT employee_id, start_date, end_date
+             FROM vacation_requests
+             WHERE employee_id IN ($empPlaceholders)
+               AND status = 'approved'
+               AND end_date >= ?
+               AND start_date <= ?";
+        $vacationStmt = $pdo->prepare($vacationSql);
+        $vacationStmt->execute(array_merge($employeeIds, [$weekStart, $weekEnd]));
+        $vacationRows = $vacationStmt->fetchAll();
+
+        $unavailableByEmployee = [];
+        foreach (array_merge($absenceRows, $vacationRows) as $row) {
+            $employeeId = (int) ($row['employee_id'] ?? 0);
+            $startDate = (string) ($row['start_date'] ?? '');
+            $endDate = (string) ($row['end_date'] ?? '');
+            if ($employeeId <= 0 || $startDate === '' || $endDate === '') {
+                continue;
+            }
+
+            $startAt = max(strtotime($startDate), strtotime($weekStart));
+            $endAt = min(strtotime($endDate), strtotime($weekEnd));
+            if ($startAt === false || $endAt === false || $startAt > $endAt) {
+                continue;
+            }
+
+            for ($cursor = $startAt; $cursor <= $endAt; $cursor = strtotime('+1 day', $cursor)) {
+                if ($cursor === false) {
+                    break;
+                }
+                $dateKey = date('Y-m-d', $cursor);
+                if (!isset($unavailableByEmployee[$employeeId])) {
+                    $unavailableByEmployee[$employeeId] = [];
+                }
+                $unavailableByEmployee[$employeeId][$dateKey] = true;
+            }
+        }
+
+        json_response([
+            'week_start' => $weekStart,
+            'week_end' => $weekEnd,
+            'unavailable_by_employee' => $unavailableByEmployee,
+        ]);
+        exit;
+    }
+
     // ---- Action par défaut : données du tableau de bord employé ----
 
     // Infos de l'employe

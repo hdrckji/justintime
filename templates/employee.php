@@ -1041,15 +1041,49 @@ if (!$auth['employee_id']) {
       order.forEach(d => { staffing[d] = Array(24).fill(0); });
 
       try {
+        const source = document.getElementById('manager-report-source').value;
+        const weekStart = toMondayISO(document.getElementById('manager-report-week-start').value);
+        const unavailableByEmployee = {};
+        const dayDateByNum = {};
+        order.forEach((dayNum, index) => {
+          const d = new Date(weekStart + 'T00:00:00');
+          d.setDate(d.getDate() + index);
+          dayDateByNum[dayNum] = d.toISOString().slice(0, 10);
+        });
+
+        if (source === 'week') {
+          const params = new URLSearchParams({
+            action: 'manager_unavailable_days',
+            week_start: weekStart,
+            department_id: String(departmentId),
+          });
+          if (selectedRayon) {
+            params.set('rayon', String(document.getElementById('manager-report-rayon').value || '').trim());
+          }
+          const unavailabilityData = await apiCall('api/me.php?' + params.toString());
+          Object.assign(unavailableByEmployee, unavailabilityData.unavailable_by_employee || {});
+        }
+
         const allRows = await Promise.all(team.map(async (emp) => {
           const data = await apiCall('api/scheduled_hours.php?action=get&employee_id=' + encodeURIComponent(emp.id) + getManagerReportQuery());
-          return Array.isArray(data.hours) ? data.hours : [];
+          return {
+            employeeId: Number(emp.id),
+            rows: Array.isArray(data.hours) ? data.hours : [],
+          };
         }));
 
-        allRows.forEach(rows => {
+        allRows.forEach(item => {
+          const rows = item.rows || [];
           rows.forEach(row => {
             const day = Number(row.day_of_week);
             if (!order.includes(day)) return;
+
+            if (source === 'week') {
+              const dateKey = dayDateByNum[day] || '';
+              if (dateKey && unavailableByEmployee[item.employeeId] && unavailableByEmployee[item.employeeId][dateKey]) {
+                return;
+              }
+            }
 
             if (row.start_time && row.end_time) {
               const [sh, sm] = String(row.start_time).slice(0, 5).split(':').map(Number);
@@ -1078,9 +1112,7 @@ if (!$auth['employee_id']) {
         let max = 0;
         order.forEach(d => staffing[d].forEach(v => { if (v > max) max = v; }));
 
-        const source = document.getElementById('manager-report-source').value;
         const slot = Number(document.getElementById('manager-report-cycle').value || 1);
-        const weekStart = toMondayISO(document.getElementById('manager-report-week-start').value);
         const headerNoteBase = source === 'week'
           ? `Semaine du ${new Date(weekStart + 'T00:00:00').toLocaleDateString('fr-FR')}`
           : `Cycle semaine ${['A', 'B', 'C'][slot - 1]}`;
