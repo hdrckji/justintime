@@ -955,27 +955,22 @@ $user = get_auth_user();
       return data;
     }
 
-    // Tabs
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(btn.dataset.tab).classList.add('active');
-      });
-    });
-
-      // Rafraichir les options de responsable quand l'onglet Departments est visible
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        if (btn.dataset.tab === 'departments') {
-          btn.addEventListener('click', () => {
-            setTimeout(() => renderDepartmentManagerOptions(), 100);
-          });
-        }
-      });
     // Collaborateurs
     let empCache = [];
     let departmentsCache = [];
+    const panelLoadState = {
+      departments: false,
+      absences: false,
+      hours: false,
+      payroll: false,
+      'vacation-requests': false,
+      'device-settings': false,
+    };
+
+    function getActiveTabId() {
+      const active = document.querySelector('.tab-content.active');
+      return active ? active.id : 'employees';
+    }
 
     function toggleTeleworkLocationsVisibility() {
       els.empAllowedLocationsWrap.style.display = els.empTeleworkEnabled.checked ? 'block' : 'none';
@@ -1026,6 +1021,66 @@ $user = get_auth_user();
         };
       }).filter(loc => loc.address !== '');
     }
+
+    async function loadTabData(tabId, options = {}) {
+      const force = Boolean(options.force);
+
+      if (tabId === 'departments') {
+        if (!force && panelLoadState.departments) return;
+        await loadDepartments();
+        return;
+      }
+
+      if (tabId === 'absences') {
+        if (!force && panelLoadState.absences) return;
+        await loadAbsences();
+        return;
+      }
+
+      if (tabId === 'hours') {
+        if (!force && panelLoadState.hours) return;
+        await Promise.all([loadHoursForSelected(), loadHoursVisual()]);
+        return;
+      }
+
+      if (tabId === 'payroll') {
+        if (!force && panelLoadState.payroll) return;
+        await loadPayrollDashboard();
+        return;
+      }
+
+      if (tabId === 'vacation-requests') {
+        if (!force && panelLoadState['vacation-requests']) return;
+        await Promise.all([loadVacationRequests(), loadVacationBalanceSummary()]);
+        return;
+      }
+
+      if (tabId === 'device-settings') {
+        if (!force && panelLoadState['device-settings']) return;
+        await loadDeviceSettings();
+      }
+    }
+
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tabId = btn.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(tabId).classList.add('active');
+
+        if (tabId === 'departments') {
+          renderDepartmentManagerOptions();
+        }
+
+        try {
+          await loadTabData(tabId);
+        } catch (e) {
+          showToast(e.message, true);
+        }
+      });
+    });
 
     function renderDepartmentOptions(preferredValue = '') {
       const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
@@ -1165,6 +1220,7 @@ $user = get_auth_user();
               </div>
             `).join('')
           : '<p style="color: var(--ink-soft);">Aucun departement pour le moment.</p>';
+        panelLoadState.departments = true;
       } catch (e) { showToast(e.message, true); }
     }
 
@@ -1232,11 +1288,16 @@ $user = get_auth_user();
         }
 
         if (refreshPanels) {
-          loadHoursForSelected();
-          loadHoursVisual();
-          loadPayrollDashboard();
-          loadVacationBalanceSummary();
-          loadVacationRequests();
+          const activeTabId = getActiveTabId();
+          if (activeTabId === 'hours') {
+            loadHoursForSelected();
+            loadHoursVisual();
+          } else if (activeTabId === 'payroll') {
+            loadPayrollDashboard();
+          } else if (activeTabId === 'vacation-requests') {
+            loadVacationBalanceSummary();
+            loadVacationRequests();
+          }
         }
       } catch (e) { showToast(e.message, true); }
     }
@@ -1369,6 +1430,7 @@ $user = get_auth_user();
             <button class="btn-delete" onclick="deleteAbsence(${a.id})" style="float: right;">Supprimer</button>
           </div>
         `).join('');
+        panelLoadState.absences = true;
       } catch (e) { showToast(e.message, true); }
     }
 
@@ -1876,6 +1938,7 @@ $user = get_auth_user();
           'beforeend',
           `<div class="hours-department-people"><h4 style="margin:0.8rem 0 0.3rem;">Repartition par collaborateur</h4>${rowsHtml}</div>`
         );
+        panelLoadState.hours = true;
       } catch (e) {
         els.hoursBalanceSummary.innerHTML = '';
         els.hoursVisualContainer.innerHTML = `<div class="hours-empty">Erreur de chargement: ${e.message}</div>`;
@@ -1999,6 +2062,7 @@ $user = get_auth_user();
             <span style="display:block; color: var(--ink-soft); font-size:0.8rem;">${escapeHtml(log.actor_username || 'system')} · ${escapeHtml(log.target_type || '')} #${escapeHtml(log.target_id || '')}</span>
           </div>
         `).join('') : '<div class="hours-empty">Aucune trace recente.</div>';
+        panelLoadState.payroll = true;
       } catch (e) {
         els.payrollOvertimeSummary.innerHTML = '';
         els.payrollOvertimeTable.innerHTML = `<div class="hours-empty">Erreur de chargement: ${escapeHtml(e.message)}</div>`;
@@ -2105,6 +2169,7 @@ $user = get_auth_user();
         if (!els.hoursViewEmployee.value) {
           els.hoursViewEmployee.value = String(empId);
         }
+        panelLoadState.hours = true;
       } catch (e) {
         showToast(e.message, true);
       }
@@ -2463,6 +2528,7 @@ $user = get_auth_user();
             </div>
           </div>`;
         }).join('');
+        panelLoadState['vacation-requests'] = true;
       } catch (e) {
         els.vacRequestsList.innerHTML = '<p style="color: var(--warn);">Erreur : ' + e.message + '</p>';
       }
@@ -2589,6 +2655,7 @@ $user = get_auth_user();
         els.cfgSuccessMessage.value = s.success_message || 'Pointage enregistre';
         els.cfgLedEnabled.value = s.led_enabled ? '1' : '0';
         els.cfgBuzzerEnabled.value = s.buzzer_enabled ? '1' : '0';
+        panelLoadState['device-settings'] = true;
       } catch (e) {
         showToast(e.message, true);
       }
@@ -2614,12 +2681,8 @@ $user = get_auth_user();
     });
 
     (async () => {
-      await loadEmployees();
+      await loadEmployees({ refreshPanels: false });
       await loadDepartments();
-      await loadAbsences();
-      await loadVacationRequests();
-      await loadVacationBalanceSummary();
-      await loadDeviceSettings();
     })();
   </script>
 </body>

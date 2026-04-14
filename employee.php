@@ -273,7 +273,6 @@ if (!$auth['employee_id']) {
           <div id="manager-hours-employee-controls">
             <label for="manager-team-employee" style="display:block; margin-bottom:0.35rem;">Collaborateur</label>
             <select id="manager-team-employee" style="width:100%; padding:0.55rem; border:1px solid var(--line); border-radius:6px; margin-bottom:0.7rem;"></select>
-            <div id="manager-hours-grid"></div>
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.7rem;">
               <button id="btn-manager-load-hours" style="padding:0.55rem 0.8rem; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink); cursor:pointer;">↺ Charger</button>
               <button id="btn-manager-save-hours" style="padding:0.55rem 0.8rem; border:0; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer;">💾 Enregistrer</button>
@@ -287,6 +286,7 @@ if (!$auth['employee_id']) {
 
           <div id="manager-week-detail-wrap" class="manager-subcard" style="margin-top:0.8rem;">
             <h4 style="margin:0 0 0.5rem;">Vue détaillée jour par jour</h4>
+            <p id="manager-hours-quota-note" class="manager-muted" style="margin:0 0 0.45rem;"></p>
             <div id="manager-week-detail"><p style="color:var(--ink-soft); margin:0;">Choisis un collaborateur.</p></div>
           </div>
         </div>
@@ -391,6 +391,7 @@ if (!$auth['employee_id']) {
       isManager: false,
       team: [],
       departments: [],
+      loadedQuotaHours: null,
     };
     const dayLabels = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
@@ -565,17 +566,6 @@ if (!$auth['employee_id']) {
       }
     }
 
-    function renderManagerHoursGrid(rows = []) {
-      const byDay = new Map(rows.map(r => [Number(r.day_of_week), Number(r.hours || 0)]));
-      const container = document.getElementById('manager-hours-grid');
-      container.innerHTML = dayLabels.map((day, idx) => `
-        <div class="manager-hours-row">
-          <label>${day}</label>
-          <input type="number" min="0" max="24" step="0.25" data-day="${idx}" value="${Number(byDay.get(idx) || 0).toFixed(2)}" />
-        </div>
-      `).join('');
-    }
-
     function renderManagerWeekDetail(rows = []) {
       const source = document.getElementById('manager-hours-source').value;
       const slot = Number(document.getElementById('manager-hours-cycle').value || 1);
@@ -614,7 +604,9 @@ if (!$auth['employee_id']) {
                   <td>${escapeHtml(dayLabels[day])}</td>
                   <td>${escapeHtml(dateText)}</td>
                   <td>${escapeHtml(range)}</td>
-                  <td class="hours">${hours.toFixed(2)} h</td>
+                  <td class="hours">
+                    <input type="number" min="0" max="24" step="0.25" data-day="${day}" class="manager-detail-hours" value="${hours.toFixed(2)}" style="width:100px; padding:0.3rem 0.4rem; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink);" />
+                  </td>
                 </tr>
               `;
             }).join('')}
@@ -714,6 +706,8 @@ if (!$auth['employee_id']) {
     async function loadManagerSchedule() {
       const view = document.getElementById('manager-hours-view').value;
       if (view === 'team') {
+        managerState.loadedQuotaHours = null;
+        document.getElementById('manager-hours-quota-note').textContent = '';
         try {
           await loadManagerTeamSchedule();
         } catch (e) {
@@ -724,14 +718,17 @@ if (!$auth['employee_id']) {
 
       const employeeId = document.getElementById('manager-team-employee').value;
       if (!employeeId) {
-        renderManagerHoursGrid([]);
+        managerState.loadedQuotaHours = null;
+        document.getElementById('manager-hours-quota-note').textContent = '';
+        document.getElementById('manager-week-detail').innerHTML = '<p style="color:var(--ink-soft); margin:0;">Choisis un collaborateur.</p>';
         return;
       }
 
       try {
         const data = await apiCall('api/scheduled_hours.php?action=get&employee_id=' + encodeURIComponent(employeeId) + getManagerHoursQuery());
         const rows = Array.isArray(data.hours) ? data.hours : [];
-        renderManagerHoursGrid(rows);
+        managerState.loadedQuotaHours = rows.reduce((acc, row) => acc + (Number(row.hours || 0) || 0), 0);
+        document.getElementById('manager-hours-quota-note').textContent = `Quota horaire a respecter: ${managerState.loadedQuotaHours.toFixed(2)} h`;
         renderManagerWeekDetail(rows);
       } catch (e) {
         showToast(e.message, true);
@@ -751,11 +748,18 @@ if (!$auth['employee_id']) {
       }
 
       const hours = {};
-      document.querySelectorAll('#manager-hours-grid input[data-day]').forEach(input => {
+      document.querySelectorAll('#manager-week-detail input[data-day]').forEach(input => {
         const day = Number(input.dataset.day);
         const val = parseFloat(input.value || '0') || 0;
         hours[day] = val;
       });
+
+      const newTotal = Object.values(hours).reduce((acc, value) => acc + Number(value || 0), 0);
+      const targetQuota = Number(managerState.loadedQuotaHours ?? 0);
+      if (Math.abs(newTotal - targetQuota) > 0.01) {
+        showToast(`Quota non respecte: ${newTotal.toFixed(2)} h saisi pour ${targetQuota.toFixed(2)} h attendues.`, true);
+        return;
+      }
 
       try {
         const source = document.getElementById('manager-hours-source').value;
