@@ -126,7 +126,11 @@ if (!$auth['employee_id']) {
     .week-cell-date { font-size: 0.78rem; text-align: center; color: var(--ink-soft); margin-bottom: 0.4rem; }
     .week-cell-date.today-num { color: var(--accent); font-weight: 700; }
     .manager-panel { border: 1px solid var(--line); border-radius: 12px; padding: 1rem; background: var(--surface-2); }
-    .manager-grid { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .manager-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .manager-panel-full { grid-column: 1 / -1; }
+    @media (max-width: 1180px) {
+      .manager-grid { grid-template-columns: 1fr; }
+    }
     .manager-hours-row { display: grid; grid-template-columns: 1fr 120px; gap: 0.6rem; align-items: center; margin-bottom: 0.45rem; }
     .manager-hours-row input { width: 100%; padding: 0.45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); }
     .manager-vac-item { border: 1px solid var(--line); border-radius: 8px; padding: 0.8rem; margin-bottom: 0.6rem; }
@@ -148,6 +152,12 @@ if (!$auth['employee_id']) {
     .manager-week-table th, .manager-week-table td { border-bottom: 1px solid var(--line); padding: 0.45rem; text-align: left; }
     .manager-week-table th { color: var(--ink-soft); font-size: 0.8rem; text-transform: uppercase; letter-spacing: .03em; }
     .manager-week-table .hours { font-weight: 700; }
+    .manager-team-wrap { overflow-x: auto; }
+    .manager-team-table { width: 100%; border-collapse: collapse; min-width: 880px; font-size: 0.82rem; }
+    .manager-team-table th, .manager-team-table td { border: 1px solid var(--line); padding: 0.4rem; text-align: center; }
+    .manager-team-table th:first-child, .manager-team-table td:first-child { text-align: left; min-width: 220px; }
+    .manager-team-table .sum { font-weight: 700; }
+    .manager-muted { color: var(--ink-soft); margin: 0; }
     .manager-heatmap-wrap { overflow-x: auto; }
     .manager-heatmap { width: 100%; border-collapse: collapse; min-width: 760px; }
     .manager-heatmap th, .manager-heatmap td {
@@ -243,6 +253,10 @@ if (!$auth['employee_id']) {
         <div class="manager-panel">
           <h3 style="margin-top:0;">🕒 Horaires des collaborateurs</h3>
           <div class="manager-toolbar">
+            <select id="manager-hours-view">
+              <option value="employee">Vue collaborateur</option>
+              <option value="team">Vue toute l'équipe</option>
+            </select>
             <select id="manager-hours-source">
               <option value="cycle">Cycle (A/B/C)</option>
               <option value="week">Semaine spécifique</option>
@@ -254,15 +268,22 @@ if (!$auth['employee_id']) {
             </select>
             <input id="manager-hours-week-start" type="date" style="display:none;" />
           </div>
-          <label for="manager-team-employee" style="display:block; margin-bottom:0.35rem;">Collaborateur</label>
-          <select id="manager-team-employee" style="width:100%; padding:0.55rem; border:1px solid var(--line); border-radius:6px; margin-bottom:0.7rem;"></select>
-          <div id="manager-hours-grid"></div>
-          <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.7rem;">
-            <button id="btn-manager-load-hours" style="padding:0.55rem 0.8rem; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink); cursor:pointer;">↺ Charger</button>
-            <button id="btn-manager-save-hours" style="padding:0.55rem 0.8rem; border:0; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer;">💾 Enregistrer</button>
+          <div id="manager-hours-employee-controls">
+            <label for="manager-team-employee" style="display:block; margin-bottom:0.35rem;">Collaborateur</label>
+            <select id="manager-team-employee" style="width:100%; padding:0.55rem; border:1px solid var(--line); border-radius:6px; margin-bottom:0.7rem;"></select>
+            <div id="manager-hours-grid"></div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.7rem;">
+              <button id="btn-manager-load-hours" style="padding:0.55rem 0.8rem; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink); cursor:pointer;">↺ Charger</button>
+              <button id="btn-manager-save-hours" style="padding:0.55rem 0.8rem; border:0; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer;">💾 Enregistrer</button>
+            </div>
           </div>
 
-          <div class="manager-subcard" style="margin-top:0.8rem;">
+          <div id="manager-hours-team-view" class="manager-subcard" style="display:none; margin-top:0.7rem;">
+            <h4 style="margin:0 0 0.5rem;">Vue hebdomadaire de toute l'équipe</h4>
+            <div id="manager-team-week-detail"><p class="manager-muted">Chargement...</p></div>
+          </div>
+
+          <div id="manager-week-detail-wrap" class="manager-subcard" style="margin-top:0.8rem;">
             <h4 style="margin:0 0 0.5rem;">Vue détaillée jour par jour</h4>
             <div id="manager-week-detail"><p style="color:var(--ink-soft); margin:0;">Choisis un collaborateur.</p></div>
           </div>
@@ -287,7 +308,7 @@ if (!$auth['employee_id']) {
           <div id="manager-report-grid"><p style="color:var(--ink-soft); margin:0;">Chargement...</p></div>
         </div>
 
-        <div class="manager-panel">
+        <div class="manager-panel manager-panel-full">
           <h3 style="margin-top:0;">🏖️ Demandes de congé équipe</h3>
           <div id="manager-vac-requests"><p style="color:var(--ink-soft);">Chargement...</p></div>
         </div>
@@ -453,6 +474,7 @@ if (!$auth['employee_id']) {
       renderManagerTeamOptions();
       renderManagerDepartmentOptions();
       updateManagerSourceVisibility();
+      updateManagerHoursViewVisibility();
       updateManagerReportSourceVisibility();
       loadManagerSchedule();
       loadManagerReportingView();
@@ -498,6 +520,13 @@ if (!$auth['employee_id']) {
       const source = document.getElementById('manager-hours-source').value;
       document.getElementById('manager-hours-cycle').style.display = source === 'cycle' ? 'block' : 'none';
       document.getElementById('manager-hours-week-start').style.display = source === 'week' ? 'block' : 'none';
+    }
+
+    function updateManagerHoursViewVisibility() {
+      const view = document.getElementById('manager-hours-view').value;
+      document.getElementById('manager-hours-employee-controls').style.display = view === 'employee' ? 'block' : 'none';
+      document.getElementById('manager-week-detail-wrap').style.display = view === 'employee' ? 'block' : 'none';
+      document.getElementById('manager-hours-team-view').style.display = view === 'team' ? 'block' : 'none';
     }
 
     function updateManagerReportSourceVisibility() {
@@ -594,7 +623,99 @@ if (!$auth['employee_id']) {
       document.getElementById('manager-week-detail').innerHTML = html;
     }
 
+    function renderManagerTeamWeekDetail(teamRows = [], headerNote = '') {
+      const order = [1, 2, 3, 4, 5, 6, 0];
+      const weekDays = order.map(d => dayLabels[d].slice(0, 3));
+
+      if (!teamRows.length) {
+        document.getElementById('manager-team-week-detail').innerHTML = '<p class="manager-muted">Aucun collaborateur trouvé.</p>';
+        return;
+      }
+
+      const totalByDay = Array(7).fill(0);
+      const bodyRows = teamRows.map(item => {
+        const byDay = new Map((item.rows || []).map(r => [Number(r.day_of_week), Number(r.hours || 0)]));
+        const values = order.map((day, idx) => {
+          const hours = Number(byDay.get(day) || 0);
+          totalByDay[idx] += hours;
+          return `<td>${hours.toFixed(2)} h</td>`;
+        }).join('');
+
+        const total = order.reduce((acc, day) => acc + Number(byDay.get(day) || 0), 0);
+        return `
+          <tr>
+            <td>${escapeHtml(item.name)}</td>
+            ${values}
+            <td class="sum">${total.toFixed(2)} h</td>
+          </tr>
+        `;
+      }).join('');
+
+      const grandTotal = totalByDay.reduce((acc, h) => acc + h, 0);
+      const footer = `
+        <tr>
+          <td class="sum">Total équipe</td>
+          ${totalByDay.map(h => `<td class="sum">${h.toFixed(2)} h</td>`).join('')}
+          <td class="sum">${grandTotal.toFixed(2)} h</td>
+        </tr>
+      `;
+
+      document.getElementById('manager-team-week-detail').innerHTML = `
+        <p class="manager-muted" style="margin-bottom:0.45rem;">${escapeHtml(headerNote)}</p>
+        <div class="manager-team-wrap">
+          <table class="manager-team-table">
+            <thead>
+              <tr>
+                <th>Collaborateur</th>
+                ${weekDays.map(label => `<th>${escapeHtml(label)}</th>`).join('')}
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${bodyRows}
+              ${footer}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    async function loadManagerTeamSchedule() {
+      const source = document.getElementById('manager-hours-source').value;
+      const slot = Number(document.getElementById('manager-hours-cycle').value || 1);
+      const weekStart = toMondayISO(document.getElementById('manager-hours-week-start').value);
+      const headerNote = source === 'week'
+        ? `Semaine du ${new Date(weekStart + 'T00:00:00').toLocaleDateString('fr-FR')}`
+        : `Cycle semaine ${['A', 'B', 'C'][slot - 1]}`;
+
+      const team = managerState.team || [];
+      if (!team.length) {
+        renderManagerTeamWeekDetail([], headerNote);
+        return;
+      }
+
+      const teamRows = await Promise.all(team.map(async (emp) => {
+        const data = await apiCall('api/scheduled_hours.php?action=get&employee_id=' + encodeURIComponent(emp.id) + getManagerHoursQuery());
+        return {
+          name: `${emp.first_name} ${emp.last_name}`,
+          rows: Array.isArray(data.hours) ? data.hours : [],
+        };
+      }));
+
+      renderManagerTeamWeekDetail(teamRows, headerNote);
+    }
+
     async function loadManagerSchedule() {
+      const view = document.getElementById('manager-hours-view').value;
+      if (view === 'team') {
+        try {
+          await loadManagerTeamSchedule();
+        } catch (e) {
+          document.getElementById('manager-team-week-detail').innerHTML = '<p style="color:var(--warn); margin:0;">Erreur: ' + escapeHtml(e.message) + '</p>';
+        }
+        return;
+      }
+
       const employeeId = document.getElementById('manager-team-employee').value;
       if (!employeeId) {
         renderManagerHoursGrid([]);
@@ -612,6 +733,11 @@ if (!$auth['employee_id']) {
     }
 
     async function saveManagerSchedule() {
+      if (document.getElementById('manager-hours-view').value !== 'employee') {
+        showToast('La modification est disponible en vue collaborateur.', true);
+        return;
+      }
+
       const employeeId = document.getElementById('manager-team-employee').value;
       if (!employeeId) {
         showToast('Choisis un collaborateur.', true);
@@ -892,6 +1018,7 @@ if (!$auth['employee_id']) {
     document.getElementById('manager-team-employee').addEventListener('change', loadManagerSchedule);
     document.getElementById('btn-manager-load-hours').addEventListener('click', loadManagerSchedule);
     document.getElementById('btn-manager-save-hours').addEventListener('click', saveManagerSchedule);
+    document.getElementById('manager-hours-view').addEventListener('change', () => { updateManagerHoursViewVisibility(); loadManagerSchedule(); });
     document.getElementById('manager-hours-source').addEventListener('change', () => { updateManagerSourceVisibility(); loadManagerSchedule(); });
     document.getElementById('manager-hours-cycle').addEventListener('change', loadManagerSchedule);
     document.getElementById('manager-hours-week-start').addEventListener('change', (e) => { e.target.value = toMondayISO(e.target.value); loadManagerSchedule(); });
