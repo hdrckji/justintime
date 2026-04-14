@@ -91,7 +91,7 @@ $dedupePlannedRowsByDay = static function (array $rows): array {
   return array_values($byDay);
 };
 
-  $loadPlannedRowsForEmployee = static function (PDO $pdo, int $employeeId, bool $hasWeekStart, bool $hasRecurrence, string $weekStartSelected): array {
+  $loadPlannedRowsForEmployee = static function (PDO $pdo, int $employeeId, bool $hasWeekStart, bool $hasRecurrence, string $weekStartSelected) use ($dedupePlannedRowsByDay): array {
     if ($employeeId <= 0) {
       return [];
     }
