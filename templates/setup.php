@@ -11,6 +11,13 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 
+$isLocal = in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
+$setupAllowed = strtolower((string) env_or_default('JIT_ALLOW_SETUP', '0'));
+if (!$isLocal && !in_array($setupAllowed, ['1', 'true', 'yes', 'on'], true)) {
+    http_response_code(403);
+    exit('setup.php est desactive en production.');
+}
+
 $output = [];
 
 try {
@@ -32,6 +39,19 @@ try {
             }
         }
         return false;
+    };
+
+    $foreign_key_exists = function (string $table, string $constraint) use ($pdo): bool {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*)
+             FROM information_schema.table_constraints
+             WHERE table_schema = DATABASE()
+               AND table_name = ?
+               AND constraint_name = ?
+               AND constraint_type = ?'
+        );
+        $stmt->execute([$table, $constraint, 'FOREIGN KEY']);
+        return (int) $stmt->fetchColumn() > 0;
     };
 
     // --- TABLE employees ---
@@ -101,6 +121,42 @@ try {
     $output[] = '✅ Colonnes employes geo + conges OK.';
 
     $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS departments (
+            id          INT           PRIMARY KEY AUTO_INCREMENT,
+            name        VARCHAR(100)  NOT NULL UNIQUE,
+            created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    if (!$column_exists('employees', 'department_id')) {
+        $pdo->exec("ALTER TABLE employees ADD COLUMN department_id INT NULL DEFAULT NULL AFTER active");
+    }
+    if (!$index_exists('employees', 'idx_employees_department')) {
+        $pdo->exec("ALTER TABLE employees ADD INDEX idx_employees_department (department_id)");
+    }
+    if (!$foreign_key_exists('employees', 'fk_employees_department')) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE employees
+                 ADD CONSTRAINT fk_employees_department
+                 FOREIGN KEY (department_id) REFERENCES departments(id)
+                 ON DELETE SET NULL"
+            );
+        } catch (Throwable $e) {
+            // Ignore si la contrainte existe deja sous un autre nom.
+        }
+    }
+    $output[] = '✅ Gestion des departements OK.';
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS device_settings (
+            config_key   VARCHAR(80) PRIMARY KEY,
+            config_value TEXT NOT NULL,
+            updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    $output[] = '✅ Configuration boitier RFID OK.';
+
+    $pdo->exec(
         "CREATE TABLE IF NOT EXISTS attendance_events (
             id          BIGINT   PRIMARY KEY AUTO_INCREMENT,
             employee_id INT      NOT NULL,
@@ -154,8 +210,11 @@ try {
     if (!$column_exists('scheduled_hours', 'end_time')) {
         $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN end_time TIME NULL AFTER start_time");
     }
+    if (!$column_exists('scheduled_hours', 'break_minutes')) {
+        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN break_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 60 AFTER end_time");
+    }
     if (!$column_exists('scheduled_hours', 'entry_mode')) {
-        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN entry_mode ENUM('daily','reference','weekly') NOT NULL DEFAULT 'daily' AFTER end_time");
+        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN entry_mode ENUM('daily','reference','weekly') NOT NULL DEFAULT 'daily' AFTER break_minutes");
     }
 
     if (!$index_exists('scheduled_hours', 'idx_scheduled_employee')) {

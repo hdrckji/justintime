@@ -80,8 +80,11 @@ function ensure_scheduled_hours_schema(PDO $pdo): void
     if (!$has('end_time')) {
         $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN end_time TIME NULL AFTER start_time");
     }
+    if (!$has('break_minutes')) {
+        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN break_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 60 AFTER end_time");
+    }
     if (!$has('entry_mode')) {
-        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN entry_mode ENUM('daily','reference','weekly') NOT NULL DEFAULT 'daily' AFTER end_time");
+        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN entry_mode ENUM('daily','reference','weekly') NOT NULL DEFAULT 'daily' AFTER break_minutes");
     }
     if (!$has('recurrence_interval')) {
         $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN recurrence_interval TINYINT UNSIGNED NOT NULL DEFAULT 1 AFTER entry_mode");
@@ -155,7 +158,7 @@ try {
 
         if ($weekStart !== null) {
             $stmt = $pdo->prepare(
-                'SELECT day_of_week, hours, start_time, end_time, entry_mode, week_start, recurrence_interval, recurrence_slot
+                'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                  FROM scheduled_hours
                  WHERE employee_id = ? AND week_start = ?
                  ORDER BY day_of_week'
@@ -166,7 +169,7 @@ try {
             if (!$rows) {
                 $targetSlot = cycle_slot_for_week($weekStart, $requestedInterval);
                 $stmt = $pdo->prepare(
-                    'SELECT day_of_week, hours, start_time, end_time, entry_mode, week_start, recurrence_interval, recurrence_slot
+                                        'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                      FROM scheduled_hours
                      WHERE employee_id = ? AND week_start IS NULL
                        AND recurrence_interval = ?
@@ -178,7 +181,7 @@ try {
 
                 if (!$rows) {
                     $stmt = $pdo->prepare(
-                        'SELECT day_of_week, hours, start_time, end_time, entry_mode, week_start, recurrence_interval, recurrence_slot
+                                                'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                          FROM scheduled_hours
                          WHERE employee_id = ? AND week_start IS NULL
                            AND recurrence_interval = 1
@@ -190,7 +193,7 @@ try {
             }
         } else {
             $stmt = $pdo->prepare(
-                'SELECT day_of_week, hours, start_time, end_time, entry_mode, week_start, recurrence_interval, recurrence_slot
+                                'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                  FROM scheduled_hours
                  WHERE employee_id = ? AND week_start IS NULL
                    AND recurrence_interval = ?
@@ -202,7 +205,7 @@ try {
 
             if (!$rows && ($requestedInterval > 1 || $requestedSlot > 1)) {
                 $stmt = $pdo->prepare(
-                    'SELECT day_of_week, hours, start_time, end_time, entry_mode, week_start, recurrence_interval, recurrence_slot
+                                        'SELECT day_of_week, hours, start_time, end_time, break_minutes, entry_mode, week_start, recurrence_interval, recurrence_slot
                      FROM scheduled_hours
                      WHERE employee_id = ? AND week_start IS NULL
                        AND recurrence_interval = 1
@@ -304,7 +307,7 @@ try {
                     continue;
                 }
                 $h = max(0, (float) $hours);
-                $rowsToInsert[] = [$d, $h, null, null, 'daily'];
+                $rowsToInsert[] = [$d, $h, null, null, 0, 'daily'];
             }
         }
 
@@ -340,8 +343,14 @@ try {
                         exit;
                     }
 
-                    $hours = round(($endMins - $startMins) / 60, 2);
-                    $rowsToInsert[] = [$d, $hours, $start . ':00', $end . ':00', 'reference'];
+                    $breakMinutes = max(0, (int) ($entry['break_minutes'] ?? 60));
+                    if ($breakMinutes >= ($endMins - $startMins)) {
+                        json_response(['error' => 'Le temps de pause doit etre inferieur a la plage de travail.'], 400);
+                        exit;
+                    }
+
+                    $hours = round(max(0, ($endMins - $startMins - $breakMinutes) / 60), 2);
+                    $rowsToInsert[] = [$d, $hours, $start . ':00', $end . ':00', $breakMinutes, 'reference'];
                 }
             } else {
                 // Compatibilite ascendante: ancien format start/end + days
@@ -362,14 +371,20 @@ try {
                     json_response(['error' => 'L\'heure de fin doit etre apres l\'heure de debut.'], 400);
                     exit;
                 }
-                $hours = round(($endMins - $startMins) / 60, 2);
+
+                $breakMinutes = max(0, (int) ($payload['break_minutes'] ?? 60));
+                if ($breakMinutes >= ($endMins - $startMins)) {
+                    json_response(['error' => 'Le temps de pause doit etre inferieur a la plage de travail.'], 400);
+                    exit;
+                }
+                $hours = round(max(0, ($endMins - $startMins - $breakMinutes) / 60), 2);
 
                 foreach ($days as $day) {
                     $d = (int) $day;
                     if ($d < 0 || $d > 6) {
                         continue;
                     }
-                    $rowsToInsert[] = [$d, $hours, $start . ':00', $end . ':00', 'reference'];
+                    $rowsToInsert[] = [$d, $hours, $start . ':00', $end . ':00', $breakMinutes, 'reference'];
                 }
             }
         }
@@ -395,7 +410,7 @@ try {
                 if ($index === $count - 1) {
                     $h = round($base + $remaining, 2);
                 }
-                $rowsToInsert[] = [$d, $h, null, null, 'weekly'];
+                $rowsToInsert[] = [$d, $h, null, null, 0, 'weekly'];
             }
         }
 
@@ -414,11 +429,11 @@ try {
         }
 
         $ins = $pdo->prepare(
-            'INSERT INTO scheduled_hours (employee_id, week_start, day_of_week, hours, start_time, end_time, entry_mode, recurrence_interval, recurrence_slot, is_working_day, is_paid_off)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO scheduled_hours (employee_id, week_start, day_of_week, hours, start_time, end_time, break_minutes, entry_mode, recurrence_interval, recurrence_slot, is_working_day, is_paid_off)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        foreach ($rowsToInsert as [$day, $hours, $startTime, $endTime, $entryMode, $isWorkingDay, $isPaidOff]) {
-            $ins->execute([$emp_id, $targetWeek, $day, $hours, $startTime, $endTime, $entryMode, $recurrenceInterval, $recurrenceSlot, $isWorkingDay ?? 1, $isPaidOff ?? 0]);
+        foreach ($rowsToInsert as [$day, $hours, $startTime, $endTime, $breakMinutes, $entryMode, $isWorkingDay, $isPaidOff]) {
+            $ins->execute([$emp_id, $targetWeek, $day, $hours, $startTime, $endTime, $breakMinutes ?? 0, $entryMode, $recurrenceInterval, $recurrenceSlot, $isWorkingDay ?? 1, $isPaidOff ?? 0]);
         }
 
         json_response([

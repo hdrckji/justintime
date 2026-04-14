@@ -210,8 +210,11 @@ try {
     if (!$column_exists('scheduled_hours', 'end_time')) {
         $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN end_time TIME NULL AFTER start_time");
     }
+    if (!$column_exists('scheduled_hours', 'break_minutes')) {
+        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN break_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 60 AFTER end_time");
+    }
     if (!$column_exists('scheduled_hours', 'entry_mode')) {
-        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN entry_mode ENUM('daily','reference','weekly') NOT NULL DEFAULT 'daily' AFTER end_time");
+        $pdo->exec("ALTER TABLE scheduled_hours ADD COLUMN entry_mode ENUM('daily','reference','weekly') NOT NULL DEFAULT 'daily' AFTER break_minutes");
     }
 
     if (!$index_exists('scheduled_hours', 'idx_scheduled_employee')) {

@@ -571,6 +571,7 @@ $user = get_auth_user();
 
       <div id="hours-reference" style="display:none; margin-top: 1rem; border:1px solid var(--line); border-radius: 10px; padding: 0.9rem;">
         <h3 style="margin-top:0; font-size:1rem;">Horaire de reference</h3>
+        <p style="margin: 0 0 0.7rem; color: var(--ink-soft); font-size: 0.86rem;">Temps de pause par jour: 60 min par defaut (modifiable par jour).</p>
         <div style="display:grid; gap:1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
           <div class="form-group" style="margin:0;" id="ref-recurrence-wrap">
             <label for="ref-recurrence-interval">Recurrence</label>
@@ -1440,6 +1441,7 @@ $user = get_auth_user();
         const checked = !!existing;
         const start = existing?.start_time ? String(existing.start_time).slice(0, 5) : '08:00';
         const end = existing?.end_time ? String(existing.end_time).slice(0, 5) : '17:00';
+        const breakMinutes = Number(existing?.break_minutes ?? 60);
 
         return `
           <div class="ref-hours-row">
@@ -1449,6 +1451,7 @@ $user = get_auth_user();
             </label>
             <input type="time" class="ref-day-start ref-hours-time" data-day="${day}" value="${start}" />
             <input type="time" class="ref-day-end ref-hours-time" data-day="${day}" value="${end}" />
+            <input type="number" class="ref-day-break ref-hours-time" data-day="${day}" min="0" max="720" step="5" value="${Number.isFinite(breakMinutes) ? breakMinutes : 60}" title="Pause (minutes)" />
           </div>
         `;
       }).join('');
@@ -1488,11 +1491,13 @@ $user = get_auth_user();
           const day = cb.dataset.day;
           const start = document.querySelector(`.ref-day-start[data-day="${day}"]`);
           const end = document.querySelector(`.ref-day-end[data-day="${day}"]`);
+          const brk = document.querySelector(`.ref-day-break[data-day="${day}"]`);
           const startMins = parseTimeToMinutes(start ? start.value : '');
           const endMins = parseTimeToMinutes(end ? end.value : '');
+          const breakMins = Math.max(0, Number(brk ? brk.value : 60) || 0);
 
           if (startMins !== null && endMins !== null && endMins > startMins) {
-            totalHours += (endMins - startMins) / 60;
+            totalHours += Math.max(0, (endMins - startMins - breakMins) / 60);
           }
         });
       } else if (mode === 'weekly') {
@@ -2227,8 +2232,10 @@ $user = get_auth_user();
         for (const day of enabledDays) {
           const startInput = document.querySelector(`.ref-day-start[data-day="${day}"]`);
           const endInput = document.querySelector(`.ref-day-end[data-day="${day}"]`);
+          const breakInput = document.querySelector(`.ref-day-break[data-day="${day}"]`);
           const start = startInput ? startInput.value : '';
           const end = endInput ? endInput.value : '';
+          const breakMinutes = Math.max(0, parseInt(breakInput ? breakInput.value : '60', 10) || 0);
 
           if (!start || !end) {
             showToast(`Complete l'heure debut/fin pour ${dayLabels[day]}.`, true);
@@ -2243,11 +2250,16 @@ $user = get_auth_user();
             showToast(`Plage invalide pour ${dayLabels[day]} (fin > debut).`, true);
             return;
           }
+          if (breakMinutes >= (endMins - startMins)) {
+            showToast(`Pause invalide pour ${dayLabels[day]} (doit etre inferieure a la plage).`, true);
+            return;
+          }
 
           referenceDays.push({
             day,
             start_time: start,
             end_time: end,
+            break_minutes: breakMinutes,
           });
         }
 
