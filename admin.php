@@ -682,6 +682,8 @@ $user = get_auth_user();
 
         <button type="button" id="btn-print-hours" class="btn-edit" style="margin-top: 0.2rem;">🖨️ Imprimer la semaine</button>
         <button type="button" id="btn-clean-hours-duplicates" class="btn-delete" style="margin-top: 0.2rem;">🧹 Nettoyer les doublons horaires</button>
+        <button type="button" id="btn-clear-specific-hours" class="btn-delete" style="margin-top: 0.2rem;">🗂️ Effacer les horaires spécifiques</button>
+        <button type="button" id="btn-clear-all-hours" class="btn-delete" style="margin-top: 0.2rem;">🗑️ Effacer tous les horaires</button>
 
         <div id="hours-balance-summary" class="hours-balance-summary"></div>
         <div id="hours-visual-container"></div>
@@ -913,6 +915,8 @@ $user = get_auth_user();
       hoursViewWeekStart: document.getElementById('hours-view-week-start'),
       btnPrintHours: document.getElementById('btn-print-hours'),
       btnCleanHoursDuplicates: document.getElementById('btn-clean-hours-duplicates'),
+      btnClearSpecificHours: document.getElementById('btn-clear-specific-hours'),
+      btnClearAllHours: document.getElementById('btn-clear-all-hours'),
       hoursBalanceSummary: document.getElementById('hours-balance-summary'),
       hoursVisualContainer: document.getElementById('hours-visual-container'),
       payrollPeriod: document.getElementById('payroll-period'),
@@ -2094,6 +2098,52 @@ $user = get_auth_user();
       }
     }
 
+    async function clearAllSchedules() {
+      const confirmation = window.prompt('Cette action va supprimer tous les horaires encodes. Tape EFFACER pour confirmer.');
+      if (confirmation !== 'EFFACER') {
+        if (confirmation !== null) {
+          showToast('Confirmation invalide, suppression annulee.', true);
+        }
+        return;
+      }
+
+      try {
+        const result = await api('api/scheduled_hours.php?action=clear_all', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
+
+        showToast(`Suppression terminee: ${result.deleted_rows || 0} horaire(s) efface(s).`);
+        await loadHoursForSelected();
+        await loadHoursVisual();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
+    async function clearSpecificSchedules() {
+      const confirmation = window.prompt('Cette action va supprimer uniquement les horaires specifiques par semaine. Tape SPECIFIQUES pour confirmer.');
+      if (confirmation !== 'SPECIFIQUES') {
+        if (confirmation !== null) {
+          showToast('Confirmation invalide, suppression annulee.', true);
+        }
+        return;
+      }
+
+      try {
+        const result = await api('api/scheduled_hours.php?action=clear_specific', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
+
+        showToast(`Suppression des horaires specifiques: ${result.deleted_rows || 0} efface(s).`);
+        await loadHoursForSelected();
+        await loadHoursVisual();
+      } catch (e) {
+        showToast(e.message, true);
+      }
+    }
+
     function ensurePayrollPeriodDefault() {
       if (!els.payrollPeriod.value) {
         els.payrollPeriod.value = new Date().toISOString().slice(0, 7);
@@ -2363,6 +2413,8 @@ $user = get_auth_user();
       }
     });
     els.btnCleanHoursDuplicates.addEventListener('click', cleanupDuplicateSchedules);
+    els.btnClearSpecificHours.addEventListener('click', clearSpecificSchedules);
+    els.btnClearAllHours.addEventListener('click', clearAllSchedules);
 
     els.hoursGrid.addEventListener('input', calcAndRenderHoursSummary);
     els.hoursGrid.addEventListener('change', calcAndRenderHoursSummary);

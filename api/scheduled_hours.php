@@ -363,6 +363,76 @@ try {
         exit;
     }
 
+    if ($action === 'clear_all') {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            json_response(['error' => 'Methode non autorisee.'], 405);
+            exit;
+        }
+
+        if (($auth['role'] ?? '') !== 'admin') {
+            json_response(['error' => 'Acces reserve aux administrateurs.'], 403);
+            exit;
+        }
+
+        $deletedRows = 0;
+        $rowsBefore = (int) $pdo->query('SELECT COUNT(*) FROM scheduled_hours')->fetchColumn();
+
+        if ($rowsBefore > 0) {
+            $pdo->beginTransaction();
+            try {
+                $deletedRows = (int) $pdo->exec('DELETE FROM scheduled_hours');
+                $pdo->commit();
+            } catch (Throwable $clearError) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $clearError;
+            }
+        }
+
+        json_response([
+            'message' => 'Tous les horaires ont ete supprimes.',
+            'rows_before' => $rowsBefore,
+            'deleted_rows' => $deletedRows,
+        ]);
+        exit;
+    }
+
+    if ($action === 'clear_specific') {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            json_response(['error' => 'Methode non autorisee.'], 405);
+            exit;
+        }
+
+        if (($auth['role'] ?? '') !== 'admin') {
+            json_response(['error' => 'Acces reserve aux administrateurs.'], 403);
+            exit;
+        }
+
+        $deletedRows = 0;
+        $rowsBefore = (int) $pdo->query('SELECT COUNT(*) FROM scheduled_hours WHERE week_start IS NOT NULL')->fetchColumn();
+
+        if ($rowsBefore > 0) {
+            $pdo->beginTransaction();
+            try {
+                $deletedRows = (int) $pdo->exec('DELETE FROM scheduled_hours WHERE week_start IS NOT NULL');
+                $pdo->commit();
+            } catch (Throwable $clearError) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $clearError;
+            }
+        }
+
+        json_response([
+            'message' => 'Les horaires specifiques ont ete supprimes.',
+            'rows_before' => $rowsBefore,
+            'deleted_rows' => $deletedRows,
+        ]);
+        exit;
+    }
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $payload = json_decode(file_get_contents('php://input'), true) ?? [];
         $emp_id = (int) ($payload['employee_id'] ?? 0);
