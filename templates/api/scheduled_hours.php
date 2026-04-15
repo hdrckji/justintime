@@ -169,6 +169,7 @@ try {
 
         $requestedWeek = trim((string) ($_GET['week_start'] ?? ''));
         $weekStart = $requestedWeek !== '' ? monday_of($requestedWeek) : null;
+        $sourceScope = 'none';
 
         $requestedInterval = max(1, min(3, (int) ($_GET['recurrence_interval'] ?? 1)));
         $requestedSlot = max(1, min($requestedInterval, (int) ($_GET['recurrence_slot'] ?? 1)));
@@ -182,6 +183,9 @@ try {
             );
             $stmt->execute([$emp_id, $weekStart]);
             $rows = $stmt->fetchAll();
+            if ($rows) {
+                $sourceScope = 'week';
+            }
 
             if (!$rows) {
                 $targetSlot = cycle_slot_for_week($weekStart, $requestedInterval);
@@ -195,6 +199,9 @@ try {
                 );
                 $stmt->execute([$emp_id, $requestedInterval, $targetSlot]);
                 $rows = $stmt->fetchAll();
+                if ($rows) {
+                    $sourceScope = $requestedInterval > 1 ? 'cycle' : 'default';
+                }
 
                 if (!$rows) {
                     $stmt = $pdo->prepare(
@@ -206,6 +213,9 @@ try {
                     );
                     $stmt->execute([$emp_id]);
                     $rows = $stmt->fetchAll();
+                    if ($rows) {
+                        $sourceScope = 'default';
+                    }
                 }
             }
         } else {
@@ -219,6 +229,9 @@ try {
             );
             $stmt->execute([$emp_id, $requestedInterval, $requestedSlot]);
             $rows = $stmt->fetchAll();
+            if ($rows) {
+                $sourceScope = $requestedInterval > 1 ? 'cycle' : 'default';
+            }
 
             if (!$rows && ($requestedInterval > 1 || $requestedSlot > 1)) {
                 $stmt = $pdo->prepare(
@@ -230,6 +243,9 @@ try {
                 );
                 $stmt->execute([$emp_id]);
                 $rows = $stmt->fetchAll();
+                if ($rows) {
+                    $sourceScope = 'default';
+                }
             }
         }
 
@@ -239,7 +255,11 @@ try {
                 }
                 unset($row);
 
-        json_response(['hours' => $rows]);
+        json_response([
+            'hours' => $rows,
+            'source_scope' => $sourceScope,
+            'requested_week_start' => $weekStart,
+        ]);
         exit;
     }
 

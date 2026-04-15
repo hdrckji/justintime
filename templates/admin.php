@@ -575,6 +575,8 @@ $user = get_auth_user();
         </div>
       </div>
 
+      <p id="hours-source-note" style="display:none; margin:0.6rem 0 0; padding:0.75rem 0.9rem; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); color:var(--ink-soft);"></p>
+
       <div id="hours-reference" style="display:none; margin-top: 1rem; border:1px solid var(--line); border-radius: 10px; padding: 0.9rem;">
         <h3 style="margin-top:0; font-size:1rem;">Horaire de reference</h3>
         <p style="margin: 0 0 0.7rem; color: var(--ink-soft); font-size: 0.86rem;">Temps de pause par jour: 60 min par defaut (modifiable par jour).</p>
@@ -897,6 +899,7 @@ $user = get_auth_user();
       hoursEditorBlock: document.getElementById('hours-editor-block'),
       hoursVisualBlock: document.getElementById('hours-visual-block'),
       hoursSummary: document.getElementById('hours-summary'),
+      hoursSourceNote: document.getElementById('hours-source-note'),
       hoursSummaryTotal: document.getElementById('hours-summary-total'),
       hoursSummaryWorkdays: document.getElementById('hours-summary-workdays'),
       hoursSummaryAvg: document.getElementById('hours-summary-avg'),
@@ -968,6 +971,7 @@ $user = get_auth_user();
     let empCache = [];
     let departmentsCache = [];
     let rayonsByDepartment = {};
+    let loadedHoursSourceScope = 'none';
     const panelLoadState = {
       departments: false,
       absences: false,
@@ -1700,6 +1704,32 @@ $user = get_auth_user();
       els.hoursViewWeekWrap.style.display = applyTo === 'week' ? 'block' : 'none';
     }
 
+    function updateHoursSourceNote() {
+      if (!els.hoursSourceNote) {
+        return;
+      }
+
+      if (els.hoursApplyTo.value !== 'week') {
+        els.hoursSourceNote.style.display = 'none';
+        els.hoursSourceNote.textContent = '';
+        return;
+      }
+
+      let message = '';
+      if (loadedHoursSourceScope === 'week') {
+        message = 'Cette semaine possede deja un horaire specifique en base. Toute modification mettra a jour cette semaine uniquement.';
+      } else if (loadedHoursSourceScope === 'cycle') {
+        message = 'Aucun horaire specifique n\'existe pour cette semaine. L\'affichage herite actuellement du cycle. Enregistrer creera un horaire specifique pour cette semaine.';
+      } else if (loadedHoursSourceScope === 'default') {
+        message = 'Aucun horaire specifique n\'existe pour cette semaine. L\'affichage herite actuellement de l\'horaire de reference. Enregistrer creera un horaire specifique pour cette semaine.';
+      } else {
+        message = 'Aucun horaire n\'existe encore pour cette semaine. Enregistrer creera un horaire specifique pour cette semaine.';
+      }
+
+      els.hoursSourceNote.textContent = message;
+      els.hoursSourceNote.style.display = 'block';
+    }
+
     function formatHours(value) {
       const num = Number(value) || 0;
       return num.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -2284,7 +2314,9 @@ $user = get_auth_user();
           url += '&recurrence_slot=' + encodeURIComponent(recurrenceSlot);
         }
         const data = await api(url);
+        loadedHoursSourceScope = String(data.source_scope || 'none');
         applyHoursDataToForm(data.hours || []);
+        updateHoursSourceNote();
         if (!els.hoursViewEmployee.value) {
           els.hoursViewEmployee.value = String(empId);
         }
@@ -2387,6 +2419,13 @@ $user = get_auth_user();
 
       const mode = els.hoursMode.value;
       const applyTo = els.hoursApplyTo.value;
+      if (applyTo === 'week' && loadedHoursSourceScope !== 'week') {
+        const ok = confirm('Cette semaine n\'a pas encore d\'horaire specifique. Enregistrer va creer une exception hebdomadaire distincte de la reference. Continuer ?');
+        if (!ok) {
+          return;
+        }
+      }
+
       const payload = {
         employee_id: Number(empId),
         mode,

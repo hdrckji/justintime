@@ -289,6 +289,7 @@ if (!$auth['employee_id']) {
           <div id="manager-week-detail-wrap" class="manager-subcard" style="margin-top:0.8rem;">
             <h4 style="margin:0 0 0.5rem;">Vue détaillée jour par jour</h4>
             <p id="manager-hours-quota-note" class="manager-muted" style="margin:0 0 0.45rem;"></p>
+            <p id="manager-hours-source-note" class="manager-muted" style="margin:0 0 0.45rem; display:none;"></p>
             <div id="manager-week-detail"><p style="color:var(--ink-soft); margin:0;">Choisis un collaborateur.</p></div>
           </div>
         </div>
@@ -409,6 +410,7 @@ if (!$auth['employee_id']) {
       team: [],
       departments: [],
       loadedQuotaHours: null,
+      loadedScheduleSourceScope: 'none',
     };
     const dayLabels = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 
@@ -832,6 +834,33 @@ if (!$auth['employee_id']) {
       return total;
     }
 
+    function updateManagerScheduleSourceNote() {
+      const note = document.getElementById('manager-hours-source-note');
+      if (!note) {
+        return;
+      }
+
+      const source = document.getElementById('manager-hours-source').value;
+      if (source !== 'week') {
+        note.style.display = 'none';
+        note.textContent = '';
+        return;
+      }
+
+      const scope = String(managerState.loadedScheduleSourceScope || 'none');
+      if (scope === 'week') {
+        note.textContent = 'Cette semaine possede deja un horaire specifique en base. Toute modification mettra a jour cette semaine uniquement.';
+      } else if (scope === 'cycle') {
+        note.textContent = 'Aucun horaire specifique n\'existe pour cette semaine. L\'affichage herite actuellement du cycle. Enregistrer creera un horaire specifique pour cette semaine.';
+      } else if (scope === 'default') {
+        note.textContent = 'Aucun horaire specifique n\'existe pour cette semaine. L\'affichage herite actuellement de l\'horaire de reference. Enregistrer creera un horaire specifique pour cette semaine.';
+      } else {
+        note.textContent = 'Aucun horaire n\'existe encore pour cette semaine. Enregistrer creera un horaire specifique pour cette semaine.';
+      }
+
+      note.style.display = 'block';
+    }
+
     function renderManagerTeamWeekDetail(teamRows = [], headerNote = '') {
       const order = [1, 2, 3, 4, 5, 6, 0];
       const weekDays = order.map(d => dayLabels[d].slice(0, 3));
@@ -905,7 +934,9 @@ if (!$auth['employee_id']) {
       const view = document.getElementById('manager-hours-view').value;
       if (view === 'team') {
         managerState.loadedQuotaHours = null;
+        managerState.loadedScheduleSourceScope = 'none';
         document.getElementById('manager-hours-quota-note').textContent = '';
+        updateManagerScheduleSourceNote();
         try {
           await loadManagerTeamSchedule();
         } catch (e) {
@@ -917,7 +948,9 @@ if (!$auth['employee_id']) {
       const employeeId = document.getElementById('manager-team-employee').value;
       if (!employeeId) {
         managerState.loadedQuotaHours = null;
+        managerState.loadedScheduleSourceScope = 'none';
         document.getElementById('manager-hours-quota-note').textContent = '';
+        updateManagerScheduleSourceNote();
         document.getElementById('manager-week-detail').innerHTML = '<p style="color:var(--ink-soft); margin:0;">Choisis un collaborateur.</p>';
         return;
       }
@@ -925,8 +958,10 @@ if (!$auth['employee_id']) {
       try {
         const data = await apiCall('api/scheduled_hours.php?action=get&employee_id=' + encodeURIComponent(employeeId) + getManagerHoursQuery());
         const rows = Array.isArray(data.hours) ? data.hours : [];
+        managerState.loadedScheduleSourceScope = String(data.source_scope || 'none');
         managerState.loadedQuotaHours = rows.reduce((acc, row) => acc + (Number(row.hours || 0) || 0), 0);
         document.getElementById('manager-hours-quota-note').textContent = `Quota horaire a respecter: ${managerState.loadedQuotaHours.toFixed(2)} h`;
+        updateManagerScheduleSourceNote();
         renderManagerWeekDetail(rows);
       } catch (e) {
         showToast(e.message, true);
@@ -1001,6 +1036,13 @@ if (!$auth['employee_id']) {
 
       try {
         const source = document.getElementById('manager-hours-source').value;
+        if (source === 'week' && managerState.loadedScheduleSourceScope !== 'week') {
+          const ok = confirm('Cette semaine n\'a pas encore d\'horaire specifique. Enregistrer va creer une exception hebdomadaire distincte de la reference. Continuer ?');
+          if (!ok) {
+            return;
+          }
+        }
+
         await apiCall('api/scheduled_hours.php?action=save', {
           method: 'POST',
           body: JSON.stringify({
