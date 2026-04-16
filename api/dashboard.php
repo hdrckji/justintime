@@ -77,6 +77,25 @@ function resolve_calendar_period(array $query): array
     return [$period, $from, $to, $anchorDate];
 }
 
+function build_datetime_range(string $fromDate, string $toDate): array
+{
+    $fromTs = strtotime($fromDate . ' 00:00:00');
+    $toTs = strtotime($toDate . ' 00:00:00');
+
+    if ($fromTs === false || $toTs === false) {
+        throw new InvalidArgumentException('Periode invalide.');
+    }
+
+    if ($toTs < $fromTs) {
+        [$fromTs, $toTs] = [$toTs, $fromTs];
+    }
+
+    return [
+        date('Y-m-d H:i:s', $fromTs),
+        date('Y-m-d H:i:s', strtotime('+1 day', $toTs) ?: ($toTs + 86400)),
+    ];
+}
+
 function summarize_day_events(array $rows): array
 {
     $openIn = null;
@@ -171,19 +190,26 @@ try {
         $employeeStmt->execute([$employeeId]);
         $employee = $employeeStmt->fetch(PDO::FETCH_ASSOC);
 
+        [$fromDateTime, $toDateTimeExclusive] = build_datetime_range($fromDate, $toDate);
+
         $eventsStmt = $pdo->prepare(
-            'SELECT event_type, source, timestamp
+            'SELECT id, event_type, source, timestamp
              FROM attendance_events
              WHERE employee_id = ?
-               AND DATE(timestamp) BETWEEN ? AND ?
+               AND timestamp >= ?
+               AND timestamp < ?
              ORDER BY timestamp ASC, id ASC'
         );
-        $eventsStmt->execute([$employeeId, $fromDate, $toDate]);
+        $eventsStmt->execute([$employeeId, $fromDateTime, $toDateTimeExclusive]);
         $eventRows = $eventsStmt->fetchAll(PDO::FETCH_ASSOC);
 
         $eventsByDay = [];
         foreach ($eventRows as $row) {
-            $day = date('Y-m-d', strtotime((string) ($row['timestamp'] ?? 'now')) ?: time());
+            $row['timestamp'] = format_iso_timestamp((string) ($row['timestamp'] ?? ''));
+            $day = substr((string) ($row['timestamp'] ?? ''), 0, 10);
+            if ($day === '') {
+                continue;
+            }
             $eventsByDay[$day][] = $row;
         }
 

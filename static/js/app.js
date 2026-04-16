@@ -197,9 +197,18 @@ function openEmployeeCalendar(employeeId, employeeName) {
   calendarState.employeeId = Number(employeeId);
 
   const today = new Date().toISOString().slice(0, 10);
-  ensureDateInputValue(els.employeeCalendarAnchor, today);
-  ensureDateInputValue(els.employeeCalendarFrom, today);
-  ensureDateInputValue(els.employeeCalendarTo, today);
+  if (els.employeeCalendarPeriod) {
+    els.employeeCalendarPeriod.value = 'custom';
+  }
+  if (els.employeeCalendarAnchor) {
+    els.employeeCalendarAnchor.value = today;
+  }
+  if (els.employeeCalendarFrom) {
+    els.employeeCalendarFrom.value = today;
+  }
+  if (els.employeeCalendarTo) {
+    els.employeeCalendarTo.value = today;
+  }
   updateCalendarPeriodInputs();
 
   if (els.employeeCalendarTitle) {
@@ -330,7 +339,12 @@ async function loadEmployeeCalendar() {
   renderEmployeeCalendarGrid(data.days || [], data.period || {});
 
   if (els.employeeCalendarSubtitle) {
-    els.employeeCalendarSubtitle.textContent = `${data.employee?.badge_id || ''} • ${formatDateLabel(data.period?.from_date || data.period?.anchor_date || new Date().toISOString().slice(0, 10))}`;
+    const startDate = data.period?.from_date || data.period?.anchor_date || new Date().toISOString().slice(0, 10);
+    const endDate = data.period?.to_date || startDate;
+    const periodLabel = startDate === endDate
+      ? formatDateLabel(startDate)
+      : `${formatDateLabel(startDate)} → ${formatDateLabel(endDate)}`;
+    els.employeeCalendarSubtitle.textContent = `${data.employee?.badge_id || ''} • ${periodLabel}`;
   }
 }
 
