@@ -365,6 +365,24 @@ if ($user['role'] === 'employee') {
         <div id="employee-list" class="employee-list"></div>
       </section>
 
+      <section class="panel" aria-labelledby="events-title">
+        <h2 id="events-title">Derniers pointages</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Heure</th>
+                <th>Employe</th>
+                <th>Badge</th>
+                <th>Action</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody id="events-body"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="toast" class="toast" role="status" aria-live="polite"></section>
 
       <section id="employee-calendar-modal" class="calendar-modal" aria-hidden="true">
