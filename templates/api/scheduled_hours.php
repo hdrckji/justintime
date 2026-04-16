@@ -433,6 +433,47 @@ try {
         exit;
     }
 
+    if ($action === 'delete_week') {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            json_response(['error' => 'Methode non autorisee.'], 405);
+            exit;
+        }
+
+        $payload = json_decode(file_get_contents('php://input'), true) ?? [];
+        $emp_id = (int) ($payload['employee_id'] ?? 0);
+        if ($emp_id <= 0 || !employee_exists($pdo, $emp_id)) {
+            json_response(['error' => 'Collaborateur invalide.'], 400);
+            exit;
+        }
+        if (!can_manage_target_employee($pdo, $auth, $emp_id)) {
+            json_response(['error' => 'Acces refuse pour ce collaborateur.'], 403);
+            exit;
+        }
+
+        $week = trim((string) ($payload['week_start'] ?? ''));
+        if ($week === '') {
+            json_response(['error' => 'Semaine requise.'], 400);
+            exit;
+        }
+        $targetWeek = monday_of($week);
+
+        $del = $pdo->prepare('DELETE FROM scheduled_hours WHERE employee_id = ? AND week_start = ?');
+        $del->execute([$emp_id, $targetWeek]);
+        $deletedRows = $del->rowCount();
+
+        if ($deletedRows <= 0) {
+            json_response(['error' => 'Aucun horaire specifique trouve pour cette semaine.'], 404);
+            exit;
+        }
+
+        json_response([
+            'message' => 'Horaire specifique supprime.',
+            'week_start' => $targetWeek,
+            'deleted_rows' => $deletedRows,
+        ]);
+        exit;
+    }
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $payload = json_decode(file_get_contents('php://input'), true) ?? [];
         $emp_id = (int) ($payload['employee_id'] ?? 0);

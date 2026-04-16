@@ -644,7 +644,10 @@ $user = get_auth_user();
             </div>
           </div>
         </div>
-      <button id="btn-save-hours" class="btn-in" style="margin-top: 1rem;">Enregistrer horaires</button>
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:1rem;">
+        <button id="btn-save-hours" class="btn-in">Enregistrer horaires</button>
+        <button type="button" id="btn-delete-hours-week" class="btn-delete" style="display:none;">Supprimer cet horaire specifique</button>
+      </div>
       </div>
 
       <div id="hours-visual-block" class="hours-visual-block" style="display:none;">
@@ -679,11 +682,7 @@ $user = get_auth_user();
             <input id="hours-view-week-start" type="date" />
           </div>
         </div>
-
-        <button type="button" id="btn-print-hours" class="btn-edit" style="margin-top: 0.2rem;">🖨️ Imprimer la semaine</button>
-        <button type="button" id="btn-clean-hours-duplicates" class="btn-delete" style="margin-top: 0.2rem;">🧹 Nettoyer les doublons horaires</button>
-        <button type="button" id="btn-clear-specific-hours" class="btn-delete" style="margin-top: 0.2rem;">🗂️ Effacer les horaires spécifiques</button>
-        <button type="button" id="btn-clear-all-hours" class="btn-delete" style="margin-top: 0.2rem;">🗑️ Effacer tous les horaires</button>
+  <button type="button" id="btn-print-hours" class="btn-edit" style="margin-top: 0.2rem;">🖨️ Imprimer la semaine</button>
 
         <div id="hours-balance-summary" class="hours-balance-summary"></div>
         <div id="hours-visual-container"></div>
@@ -896,6 +895,7 @@ $user = get_auth_user();
       weeklyHoursTotal: document.getElementById('weekly-hours-total'),
       hoursGrid: document.getElementById('hours-grid'),
       btnSaveHours: document.getElementById('btn-save-hours'),
+      btnDeleteHoursWeek: document.getElementById('btn-delete-hours-week'),
       hoursShowEditor: document.getElementById('hours-show-editor'),
       hoursShowVisual: document.getElementById('hours-show-visual'),
       hoursEditorBlock: document.getElementById('hours-editor-block'),
@@ -914,9 +914,6 @@ $user = get_auth_user();
       hoursViewWeekWrap: document.getElementById('hours-view-week-wrap'),
       hoursViewWeekStart: document.getElementById('hours-view-week-start'),
       btnPrintHours: document.getElementById('btn-print-hours'),
-      btnCleanHoursDuplicates: document.getElementById('btn-clean-hours-duplicates'),
-      btnClearSpecificHours: document.getElementById('btn-clear-specific-hours'),
-      btnClearAllHours: document.getElementById('btn-clear-all-hours'),
       hoursBalanceSummary: document.getElementById('hours-balance-summary'),
       hoursVisualContainer: document.getElementById('hours-visual-container'),
       payrollPeriod: document.getElementById('payroll-period'),
@@ -1734,6 +1731,19 @@ $user = get_auth_user();
       els.hoursSourceNote.style.display = 'block';
     }
 
+    function updateDeleteWeekButton() {
+      if (!els.btnDeleteHoursWeek) {
+        return;
+      }
+
+      const showButton = els.hoursApplyTo.value === 'week';
+      els.btnDeleteHoursWeek.style.display = showButton ? 'inline-flex' : 'none';
+      els.btnDeleteHoursWeek.disabled = loadedHoursSourceScope !== 'week';
+      els.btnDeleteHoursWeek.textContent = loadedHoursSourceScope === 'week'
+        ? 'Supprimer cet horaire specifique'
+        : 'Aucun horaire specifique a supprimer';
+    }
+
     function formatHours(value) {
       const num = Number(value) || 0;
       return num.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -2078,65 +2088,36 @@ $user = get_auth_user();
       }
     }
 
-    async function cleanupDuplicateSchedules() {
-      if (!confirm('Lancer le nettoyage des doublons d\'horaires en base ?')) {
+    async function deleteSelectedWeekSchedule() {
+      const empId = Number(els.hoursEmployee.value || 0);
+      if (!empId) {
+        showToast('Selectionnez un collaborateur.', true);
+        return;
+      }
+      if (els.hoursApplyTo.value !== 'week') {
+        showToast('Passe la portee sur semaine specifique.', true);
+        return;
+      }
+      if (loadedHoursSourceScope !== 'week') {
+        showToast('Il n\'y a pas d\'horaire specifique a supprimer pour cette semaine.', true);
+        return;
+      }
+
+      ensureWeekDefault();
+      const weekStart = toMondayISO(els.hoursWeekStart.value);
+      if (!confirm(`Supprimer l'horaire specifique de la semaine ${weekStart} ?`)) {
         return;
       }
 
       try {
-        const result = await api('api/scheduled_hours.php?action=cleanup_duplicates', {
+        await api('api/scheduled_hours.php?action=delete_week', {
           method: 'POST',
-          body: JSON.stringify({}),
+          body: JSON.stringify({
+            employee_id: empId,
+            week_start: weekStart,
+          }),
         });
-
-        showToast(
-          `Nettoyage termine: ${result.deleted_rows || 0} supprimes (${result.duplicate_rows_before || 0} -> ${result.duplicate_rows_after || 0}).`
-        );
-        loadHoursVisual();
-      } catch (e) {
-        showToast(e.message, true);
-      }
-    }
-
-    async function clearAllSchedules() {
-      const confirmation = window.prompt('Cette action va supprimer tous les horaires encodes. Tape EFFACER pour confirmer.');
-      if (confirmation !== 'EFFACER') {
-        if (confirmation !== null) {
-          showToast('Confirmation invalide, suppression annulee.', true);
-        }
-        return;
-      }
-
-      try {
-        const result = await api('api/scheduled_hours.php?action=clear_all', {
-          method: 'POST',
-          body: JSON.stringify({}),
-        });
-
-        showToast(`Suppression terminee: ${result.deleted_rows || 0} horaire(s) efface(s).`);
-        await loadHoursForSelected();
-        await loadHoursVisual();
-      } catch (e) {
-        showToast(e.message, true);
-      }
-    }
-
-    async function clearSpecificSchedules() {
-      const confirmation = window.prompt('Cette action va supprimer uniquement les horaires specifiques par semaine. Tape SPECIFIQUES pour confirmer.');
-      if (confirmation !== 'SPECIFIQUES') {
-        if (confirmation !== null) {
-          showToast('Confirmation invalide, suppression annulee.', true);
-        }
-        return;
-      }
-
-      try {
-        const result = await api('api/scheduled_hours.php?action=clear_specific', {
-          method: 'POST',
-          body: JSON.stringify({}),
-        });
-
-        showToast(`Suppression des horaires specifiques: ${result.deleted_rows || 0} efface(s).`);
+        showToast('Horaire specifique supprime. La reference reprend la main pour cette semaine.');
         await loadHoursForSelected();
         await loadHoursVisual();
       } catch (e) {
@@ -2346,9 +2327,12 @@ $user = get_auth_user();
     async function loadHoursForSelected() {
       const empId = els.hoursEmployee.value;
       if (!empId) {
+        loadedHoursSourceScope = 'none';
         renderHoursGrid([]);
         renderReferenceHoursGrid([]);
         calcAndRenderHoursSummary();
+        updateHoursSourceNote();
+        updateDeleteWeekButton();
         return;
       }
 
@@ -2367,6 +2351,7 @@ $user = get_auth_user();
         loadedHoursSourceScope = String(data.source_scope || 'none');
         applyHoursDataToForm(data.hours || []);
         updateHoursSourceNote();
+        updateDeleteWeekButton();
         if (!els.hoursViewEmployee.value) {
           els.hoursViewEmployee.value = String(empId);
         }
@@ -2379,6 +2364,7 @@ $user = get_auth_user();
     els.hoursEmployee.addEventListener('change', loadHoursForSelected);
     els.hoursApplyTo.addEventListener('change', () => {
       updateHoursModeVisibility();
+      updateDeleteWeekButton();
       loadHoursForSelected();
     });
     els.hoursWeekStart.addEventListener('change', () => {
@@ -2412,9 +2398,7 @@ $user = get_auth_user();
         showToast(e.message, true);
       }
     });
-    els.btnCleanHoursDuplicates.addEventListener('click', cleanupDuplicateSchedules);
-    els.btnClearSpecificHours.addEventListener('click', clearSpecificSchedules);
-    els.btnClearAllHours.addEventListener('click', clearAllSchedules);
+    els.btnDeleteHoursWeek.addEventListener('click', deleteSelectedWeekSchedule);
 
     els.hoursGrid.addEventListener('input', calcAndRenderHoursSummary);
     els.hoursGrid.addEventListener('change', calcAndRenderHoursSummary);
@@ -2578,6 +2562,7 @@ $user = get_auth_user();
     updateRecurrenceSlotOptions(1, 1);
     updateHoursModeVisibility();
     updateHoursViewVisibility();
+    updateDeleteWeekButton();
     showHoursSection('editor');
     renderHoursGrid([]);
     renderReferenceHoursGrid([]);
