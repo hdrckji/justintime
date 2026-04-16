@@ -55,6 +55,229 @@ if ($user['role'] === 'employee') {
         margin-top: 0.2rem;
       }
 
+      .dashboard-layout .employee-item {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 0.8rem;
+        align-items: center;
+      }
+
+      .dashboard-layout .employee-link {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        padding: 0;
+        text-align: left;
+        cursor: pointer;
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .dashboard-layout .employee-link p {
+        margin: 0;
+        font-weight: 700;
+      }
+
+      .dashboard-layout .employee-link:hover p {
+        text-decoration: underline;
+      }
+
+      .dashboard-layout .calendar-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 14, 23, 0.68);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        z-index: 1200;
+      }
+
+      .dashboard-layout .calendar-modal.open {
+        display: flex;
+      }
+
+      .dashboard-layout .calendar-modal-card {
+        width: min(1120px, 100%);
+        max-height: 92vh;
+        overflow: auto;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        padding: 1rem;
+      }
+
+      .dashboard-layout .calendar-modal-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: start;
+        margin-bottom: 0.9rem;
+      }
+
+      .dashboard-layout .calendar-modal-head h3 {
+        margin: 0;
+      }
+
+      .dashboard-layout .calendar-modal-close {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: var(--surface-2);
+        color: var(--ink);
+        border-radius: 10px;
+        min-width: 40px;
+        min-height: 40px;
+        cursor: pointer;
+      }
+
+      .dashboard-layout .calendar-toolbar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.8rem;
+        align-items: end;
+        margin-bottom: 1rem;
+      }
+
+      .dashboard-layout .calendar-toolbar .actions {
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+
+      .dashboard-layout .calendar-toolbar label {
+        display: block;
+        margin-bottom: 0.35rem;
+        color: var(--ink-soft);
+        font-weight: 600;
+      }
+
+      .dashboard-layout .calendar-toolbar input,
+      .dashboard-layout .calendar-toolbar select {
+        width: 100%;
+      }
+
+      .dashboard-layout .calendar-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+      }
+
+      .dashboard-layout .calendar-summary-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface-2);
+        padding: 0.8rem;
+      }
+
+      .dashboard-layout .calendar-summary-card p {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 0.82rem;
+      }
+
+      .dashboard-layout .calendar-summary-card strong {
+        display: block;
+        margin-top: 0.35rem;
+        font-size: 1.15rem;
+      }
+
+      .dashboard-layout .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 0.6rem;
+      }
+
+      .dashboard-layout .calendar-weekday {
+        color: var(--ink-soft);
+        font-size: 0.82rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 0 0.25rem;
+      }
+
+      .dashboard-layout .calendar-spacer {
+        min-height: 1px;
+      }
+
+      .dashboard-layout .calendar-day {
+        min-height: 158px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface-2);
+        padding: 0.7rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+      }
+
+      .dashboard-layout .calendar-day.complete {
+        border-color: rgba(52, 211, 153, 0.35);
+      }
+
+      .dashboard-layout .calendar-day.incomplete {
+        border-color: rgba(251, 191, 36, 0.4);
+      }
+
+      .dashboard-layout .calendar-day.empty {
+        opacity: 0.82;
+      }
+
+      .dashboard-layout .calendar-day-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        align-items: baseline;
+      }
+
+      .dashboard-layout .calendar-day-head strong {
+        font-size: 1rem;
+      }
+
+      .dashboard-layout .calendar-day-meta {
+        font-size: 0.8rem;
+        color: var(--ink-soft);
+        display: grid;
+        gap: 0.15rem;
+      }
+
+      .dashboard-layout .calendar-events {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: auto;
+      }
+
+      .dashboard-layout .calendar-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        border-radius: 999px;
+        padding: 0.22rem 0.5rem;
+        background: rgba(255,255,255,0.06);
+        color: var(--ink);
+        font-size: 0.76rem;
+        white-space: nowrap;
+      }
+
+      .dashboard-layout .calendar-chip.in {
+        background: rgba(52, 211, 153, 0.15);
+      }
+
+      .dashboard-layout .calendar-chip.out {
+        background: rgba(251, 146, 60, 0.16);
+      }
+
+      .dashboard-layout .calendar-empty {
+        border: 1px dashed var(--line);
+        border-radius: 14px;
+        background: var(--surface-2);
+        padding: 1rem;
+        color: var(--ink-soft);
+      }
+
       @media (max-width: 700px) {
         .dashboard-layout .manual-grid {
           grid-template-columns: 1fr;
@@ -62,6 +285,15 @@ if ($user['role'] === 'employee') {
 
         .dashboard-layout .manual-grid .actions {
           width: 100%;
+        }
+
+        .dashboard-layout .calendar-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .dashboard-layout .calendar-weekday,
+        .dashboard-layout .calendar-spacer {
+          display: none;
         }
       }
     </style>
@@ -134,6 +366,47 @@ if ($user['role'] === 'employee') {
       </section>
 
       <section id="toast" class="toast" role="status" aria-live="polite"></section>
+
+      <section id="employee-calendar-modal" class="calendar-modal" aria-hidden="true">
+        <div class="calendar-modal-card">
+          <div class="calendar-modal-head">
+            <div>
+              <h3 id="employee-calendar-title">Pointages collaborateur</h3>
+              <p id="employee-calendar-subtitle" class="subtitle" style="margin:0.2rem 0 0;">Chargement...</p>
+            </div>
+            <button type="button" id="employee-calendar-close" class="calendar-modal-close" aria-label="Fermer">✕</button>
+          </div>
+
+          <div class="calendar-toolbar">
+            <div>
+              <label for="employee-calendar-period">Période</label>
+              <select id="employee-calendar-period">
+                <option value="week">Hebdomadaire</option>
+                <option value="month">Mensuel</option>
+                <option value="custom">Dates déterminées</option>
+              </select>
+            </div>
+            <div>
+              <label for="employee-calendar-anchor">Date de référence</label>
+              <input id="employee-calendar-anchor" type="date" />
+            </div>
+            <div id="employee-calendar-from-wrap" style="display:none;">
+              <label for="employee-calendar-from">Du</label>
+              <input id="employee-calendar-from" type="date" />
+            </div>
+            <div id="employee-calendar-to-wrap" style="display:none;">
+              <label for="employee-calendar-to">Au</label>
+              <input id="employee-calendar-to" type="date" />
+            </div>
+            <div class="actions">
+              <button type="button" id="employee-calendar-apply" class="btn-in">Afficher</button>
+            </div>
+          </div>
+
+          <div id="employee-calendar-summary" class="calendar-summary"></div>
+          <div id="employee-calendar-grid"></div>
+        </div>
+      </section>
     </main>
 
     <script src="static/js/app.js" defer></script>
