@@ -318,6 +318,109 @@ $user = get_auth_user();
       background: var(--surface-2);
       margin-top: 1rem;
     }
+    .attendance-filters-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-items: end;
+    }
+    .attendance-summary-grid {
+      display: grid;
+      gap: 0.8rem;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      margin-top: 1rem;
+    }
+    .attendance-day-list {
+      display: grid;
+      gap: 0.9rem;
+      margin-top: 1rem;
+    }
+    .attendance-day-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-2);
+      padding: 0.9rem;
+    }
+    .attendance-day-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.8rem;
+      align-items: baseline;
+      flex-wrap: wrap;
+      margin-bottom: 0.65rem;
+    }
+    .attendance-day-head strong {
+      font-size: 0.96rem;
+    }
+    .attendance-day-head span {
+      color: var(--ink-soft);
+      font-size: 0.82rem;
+    }
+    .attendance-people-list {
+      display: grid;
+      gap: 0.55rem;
+    }
+    .attendance-person-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.02);
+      padding: 0.7rem 0.75rem;
+    }
+    .attendance-person-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.6rem;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+    .attendance-person-meta {
+      color: var(--ink-soft);
+      font-size: 0.8rem;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.3rem;
+    }
+    .attendance-events {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.55rem;
+    }
+    .attendance-event-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      border-radius: 999px;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.76rem;
+      color: var(--ink);
+      background: rgba(255,255,255,0.06);
+    }
+    .attendance-event-chip.in {
+      background: rgba(52, 211, 153, 0.15);
+    }
+    .attendance-event-chip.out {
+      background: rgba(251, 146, 60, 0.16);
+    }
+    .attendance-status-badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.18rem 0.55rem;
+      font-size: 0.76rem;
+      font-weight: 700;
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--ink-soft);
+    }
+    .attendance-status-badge.complete {
+      background: rgba(52, 211, 153, 0.15);
+      color: var(--ok);
+    }
+    .attendance-status-badge.incomplete {
+      background: rgba(251, 191, 36, 0.18);
+      color: #fbbf24;
+    }
     .department-card > div {
       min-height: 2.5rem;
     }
@@ -386,6 +489,7 @@ $user = get_auth_user();
       <a class="nav-link-btn" href="corrections.php">✏️ Corrections</a>
       <button class="tab-btn" data-tab="departments">🏷️ Départements</button>
       <button class="tab-btn" data-tab="absences">📋 Absences</button>
+      <button class="tab-btn" data-tab="attendance">🕒 Pointage</button>
       <button class="tab-btn" data-tab="hours">⏰ Horaires</button>
       <button class="tab-btn" data-tab="payroll">💼 Paie & cloture</button>
       <button class="tab-btn" data-tab="vacation-requests">🏖️ Congés</button>
@@ -535,6 +639,62 @@ $user = get_auth_user();
 
       <h3 style="margin-top: 2rem;">Absences en cours</h3>
       <div id="absences-list"></div>
+    </div>
+
+    <div id="attendance" class="tab-content panel">
+      <h2>Consultation des pointages</h2>
+      <p style="color: var(--ink-soft); margin-top: 0;">Consulte les pointages d'un collaborateur, d'un département ou d'un rayon sur une journée, une semaine, un mois ou une période personnalisée.</p>
+
+      <div class="attendance-filters-grid">
+        <div class="form-group" style="margin:0;">
+          <label for="attendance-scope">Périmètre</label>
+          <select id="attendance-scope">
+            <option value="employee">Collaborateur</option>
+            <option value="department">Département</option>
+            <option value="rayon">Rayon</option>
+          </select>
+        </div>
+        <div class="form-group" id="attendance-employee-wrap" style="margin:0;">
+          <label for="attendance-employee">Collaborateur</label>
+          <select id="attendance-employee"></select>
+        </div>
+        <div class="form-group" id="attendance-department-wrap" style="margin:0; display:none;">
+          <label for="attendance-department">Département</label>
+          <select id="attendance-department"></select>
+        </div>
+        <div class="form-group" id="attendance-rayon-wrap" style="margin:0; display:none;">
+          <label for="attendance-rayon">Rayon</label>
+          <select id="attendance-rayon"></select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="attendance-period">Période</label>
+          <select id="attendance-period">
+            <option value="day">Jour</option>
+            <option value="week">Semaine</option>
+            <option value="month">Mois</option>
+            <option value="custom">Période déterminée</option>
+          </select>
+        </div>
+        <div class="form-group" id="attendance-anchor-wrap" style="margin:0;">
+          <label for="attendance-anchor-date">Date de référence</label>
+          <input id="attendance-anchor-date" type="date" />
+        </div>
+        <div class="form-group" id="attendance-from-wrap" style="margin:0; display:none;">
+          <label for="attendance-from-date">Du</label>
+          <input id="attendance-from-date" type="date" />
+        </div>
+        <div class="form-group" id="attendance-to-wrap" style="margin:0; display:none;">
+          <label for="attendance-to-date">Au</label>
+          <input id="attendance-to-date" type="date" />
+        </div>
+      </div>
+
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:1rem;">
+        <button type="button" id="btn-load-attendance" class="btn-in">Afficher les pointages</button>
+      </div>
+
+      <div id="attendance-summary" class="attendance-summary-grid"></div>
+      <div id="attendance-results"></div>
     </div>
 
     <!-- Onglet Horaires -->
@@ -879,6 +1039,23 @@ $user = get_auth_user();
       absEnd: document.getElementById('abs-end'),
       absReason: document.getElementById('abs-reason'),
       absencesList: document.getElementById('absences-list'),
+      attendanceScope: document.getElementById('attendance-scope'),
+      attendanceEmployeeWrap: document.getElementById('attendance-employee-wrap'),
+      attendanceEmployee: document.getElementById('attendance-employee'),
+      attendanceDepartmentWrap: document.getElementById('attendance-department-wrap'),
+      attendanceDepartment: document.getElementById('attendance-department'),
+      attendanceRayonWrap: document.getElementById('attendance-rayon-wrap'),
+      attendanceRayon: document.getElementById('attendance-rayon'),
+      attendancePeriod: document.getElementById('attendance-period'),
+      attendanceAnchorWrap: document.getElementById('attendance-anchor-wrap'),
+      attendanceAnchorDate: document.getElementById('attendance-anchor-date'),
+      attendanceFromWrap: document.getElementById('attendance-from-wrap'),
+      attendanceFromDate: document.getElementById('attendance-from-date'),
+      attendanceToWrap: document.getElementById('attendance-to-wrap'),
+      attendanceToDate: document.getElementById('attendance-to-date'),
+      btnLoadAttendance: document.getElementById('btn-load-attendance'),
+      attendanceSummary: document.getElementById('attendance-summary'),
+      attendanceResults: document.getElementById('attendance-results'),
       hoursEmployee: document.getElementById('hours-employee'),
       hoursApplyTo: document.getElementById('hours-apply-to'),
       hoursWeekWrap: document.getElementById('hours-week-wrap'),
@@ -976,6 +1153,7 @@ $user = get_auth_user();
     const panelLoadState = {
       departments: false,
       absences: false,
+      attendance: false,
       hours: false,
       payroll: false,
       'vacation-requests': false,
@@ -1057,6 +1235,12 @@ $user = get_auth_user();
         await Promise.all([loadHoursForSelected(), loadHoursVisual()]);
         return;
       }
+
+        if (tabId === 'attendance') {
+          if (!force && panelLoadState.attendance) return;
+          await loadAdminAttendance();
+          return;
+        }
 
       if (tabId === 'payroll') {
         if (!force && panelLoadState.payroll) return;
@@ -1167,6 +1351,53 @@ $user = get_auth_user();
       }
     }
 
+    function renderAttendanceDepartmentOptions(preferredValue = '') {
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.attendanceDepartment.value || '');
+
+      els.attendanceDepartment.innerHTML = [
+        '<option value="">-- Choisir un departement --</option>',
+        ...departmentsCache.map(d => `<option value="${d.id}">${d.name}</option>`),
+      ].join('');
+
+      if (wanted && departmentsCache.some(d => String(d.id) === wanted)) {
+        els.attendanceDepartment.value = wanted;
+      }
+    }
+
+    function renderAttendanceEmployeeOptions(preferredValue = '') {
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.attendanceEmployee.value || '');
+
+      els.attendanceEmployee.innerHTML = [
+        '<option value="">-- Choisir un collaborateur --</option>',
+        ...empCache.map(e => `<option value="${e.id}">${e.first_name} ${e.last_name}</option>`),
+      ].join('');
+
+      if (wanted && empCache.some(e => String(e.id) === wanted)) {
+        els.attendanceEmployee.value = wanted;
+      }
+    }
+
+    function renderAttendanceRayonOptions(preferredValue = '') {
+      const departmentId = Number(els.attendanceDepartment.value || 0);
+      const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
+        ? String(preferredValue)
+        : String(els.attendanceRayon.value || '');
+      const rayons = departmentId > 0 ? (rayonsByDepartment[departmentId] || []) : [];
+
+      els.attendanceRayon.innerHTML = [
+        '<option value="">-- Choisir un rayon --</option>',
+        ...rayons.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`),
+      ].join('');
+
+      if (wanted && rayons.some(r => String(r.name) === wanted)) {
+        els.attendanceRayon.value = wanted;
+      }
+    }
+
     function renderHoursViewEmployeeOptions(preferredValue = '') {
       const wanted = preferredValue !== '' && preferredValue !== null && preferredValue !== undefined
         ? String(preferredValue)
@@ -1243,6 +1474,8 @@ $user = get_auth_user();
         renderDepartmentOptions(preferredValue);
         renderHoursViewDepartmentOptions(prevHoursViewDepartment);
         renderPayrollDepartmentOptions(prevPayrollDepartment);
+        renderAttendanceDepartmentOptions();
+        renderAttendanceRayonOptions();
 
         els.departmentsList.innerHTML = departmentsCache.length
           ? departmentsCache.map(d => `
@@ -1322,6 +1555,7 @@ $user = get_auth_user();
         renderHoursViewEmployeeOptions(prevHoursViewEmployee);
         renderPayrollEmployeeOptions(prevPayrollEmployee);
         renderVacationEmployeeOptions(prevVacationFilter);
+        renderAttendanceEmployeeOptions();
 
         const existingIds = new Set(data.employees.map(e => String(e.id)));
         const preferredId = currentEditId || prevHoursValue;
@@ -1565,6 +1799,162 @@ $user = get_auth_user();
         loadAbsences();
       } catch (e) { showToast(e.message, true); }
     });
+
+    function ensureAttendanceDatesDefault() {
+      const today = new Date().toISOString().slice(0, 10);
+      if (!els.attendanceAnchorDate.value) els.attendanceAnchorDate.value = today;
+      if (!els.attendanceFromDate.value) els.attendanceFromDate.value = today;
+      if (!els.attendanceToDate.value) els.attendanceToDate.value = today;
+    }
+
+    function updateAttendanceFilterVisibility() {
+      const scope = els.attendanceScope.value;
+      const period = els.attendancePeriod.value;
+
+      els.attendanceEmployeeWrap.style.display = scope === 'employee' ? 'block' : 'none';
+      els.attendanceDepartmentWrap.style.display = scope === 'department' || scope === 'rayon' ? 'block' : 'none';
+      els.attendanceRayonWrap.style.display = scope === 'rayon' ? 'block' : 'none';
+
+      const isCustom = period === 'custom';
+      els.attendanceAnchorWrap.style.display = isCustom ? 'none' : 'block';
+      els.attendanceFromWrap.style.display = isCustom ? 'block' : 'none';
+      els.attendanceToWrap.style.display = isCustom ? 'block' : 'none';
+    }
+
+    function buildAttendanceQuery() {
+      ensureAttendanceDatesDefault();
+      const params = new URLSearchParams({
+        scope: els.attendanceScope.value,
+        period: els.attendancePeriod.value,
+        anchor_date: els.attendanceAnchorDate.value,
+      });
+
+      if (els.attendanceScope.value === 'employee' && els.attendanceEmployee.value) {
+        params.set('employee_id', els.attendanceEmployee.value);
+      }
+      if ((els.attendanceScope.value === 'department' || els.attendanceScope.value === 'rayon') && els.attendanceDepartment.value) {
+        params.set('department_id', els.attendanceDepartment.value);
+      }
+      if (els.attendanceScope.value === 'rayon' && els.attendanceRayon.value) {
+        params.set('rayon', els.attendanceRayon.value);
+      }
+      if (els.attendancePeriod.value === 'custom') {
+        params.set('from_date', els.attendanceFromDate.value);
+        params.set('to_date', els.attendanceToDate.value);
+      }
+
+      return 'api/admin_attendance.php?' + params.toString();
+    }
+
+    function renderAttendanceSummary(data) {
+      const summary = data.summary || {};
+      const scope = data.scope || {};
+      const period = data.period || {};
+
+      els.attendanceSummary.innerHTML = `
+        <div class="hours-balance-card">
+          <p>Périmètre</p>
+          <strong>${escapeHtml(scope.display_name || scope.label || '-')}</strong>
+        </div>
+        <div class="hours-balance-card">
+          <p>Période</p>
+          <strong>${escapeHtml(period.from_date || '-')} → ${escapeHtml(period.to_date || '-')}</strong>
+        </div>
+        <div class="hours-balance-card">
+          <p>Collaborateurs</p>
+          <strong>${escapeHtml(summary.people_in_scope ?? 0)}</strong>
+        </div>
+        <div class="hours-balance-card">
+          <p>Jours avec pointage</p>
+          <strong>${escapeHtml(summary.days_with_events ?? 0)}</strong>
+        </div>
+        <div class="hours-balance-card">
+          <p>Heures pointées</p>
+          <strong>${escapeHtml(formatHours(summary.total_hours || 0))} h</strong>
+        </div>
+        <div class="hours-balance-card">
+          <p>Événements</p>
+          <strong>${escapeHtml(summary.total_events ?? 0)}</strong>
+        </div>
+      `;
+    }
+
+    function renderAttendanceResults(data) {
+      const days = Array.isArray(data.days) ? data.days : [];
+      const scope = data.scope || {};
+
+      if (!days.length) {
+        els.attendanceResults.innerHTML = '<div class="hours-empty">Aucun résultat pour cette période.</div>';
+        return;
+      }
+
+      els.attendanceResults.innerHTML = `
+        <div class="attendance-day-list">
+          ${days.map((day) => {
+            const people = Array.isArray(day.people) ? day.people : [];
+            const activePeople = people.filter(person => Number(person.event_count || 0) > 0);
+            const dayPeople = scope.type === 'employee' ? people : activePeople;
+
+            return `
+              <div class="attendance-day-card">
+                <div class="attendance-day-head">
+                  <strong>${escapeHtml(day.label || day.date || '')}</strong>
+                  <span>${escapeHtml(formatHours(day.total_hours || 0))} h · ${escapeHtml(day.total_events || 0)} pointage(s)${scope.type !== 'employee' ? ` · ${escapeHtml(day.people_count || 0)} collab.` : ''}</span>
+                </div>
+                ${dayPeople.length ? `
+                  <div class="attendance-people-list">
+                    ${dayPeople.map((person) => `
+                      <div class="attendance-person-card">
+                        <div class="attendance-person-head">
+                          <strong>${escapeHtml(person.name || '-')}</strong>
+                          <span class="attendance-status-badge ${escapeHtml(person.status || 'empty')}">${escapeHtml(person.status === 'complete' ? 'Complet' : person.status === 'incomplete' ? 'Incomplet' : 'Aucun pointage')}</span>
+                        </div>
+                        <div class="attendance-person-meta">
+                          <span>Badge: ${escapeHtml(person.badge_id || '-')}</span>
+                          ${person.department_name ? `<span>Département: ${escapeHtml(person.department_name)}</span>` : ''}
+                          ${person.rayon ? `<span>Rayon: ${escapeHtml(person.rayon)}</span>` : ''}
+                          <span>Entrée: ${escapeHtml(person.first_in || '-')}</span>
+                          <span>Sortie: ${escapeHtml(person.last_out || '-')}</span>
+                          <span>Total: ${escapeHtml(formatHours(person.worked_hours || 0))} h</span>
+                        </div>
+                        <div class="attendance-events">
+                          ${(Array.isArray(person.events) && person.events.length)
+                            ? person.events.map((event) => `<span class="attendance-event-chip ${escapeHtml(event.event_type || '')}">${escapeHtml(event.time || '')} ${escapeHtml(event.event_type === 'in' ? 'Entrée' : 'Sortie')} · ${escapeHtml((event.source || '').toUpperCase() || '-')}</span>`).join('')
+                            : '<span style="color:var(--ink-soft); font-size:0.82rem;">Aucun pointage sur cette journée.</span>'}
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : '<div class="hours-empty" style="margin-top:0;">Aucun pointage sur cette journée.</div>'}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    async function loadAdminAttendance() {
+      try {
+        updateAttendanceFilterVisibility();
+        const data = await api(buildAttendanceQuery());
+        renderAttendanceSummary(data);
+        renderAttendanceResults(data);
+        panelLoadState.attendance = true;
+      } catch (e) {
+        els.attendanceSummary.innerHTML = '';
+        els.attendanceResults.innerHTML = `<div class="hours-empty">Erreur de chargement: ${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    els.attendanceScope.addEventListener('change', () => {
+      updateAttendanceFilterVisibility();
+      if (els.attendanceScope.value === 'rayon') {
+        renderAttendanceRayonOptions('');
+      }
+    });
+    els.attendanceDepartment.addEventListener('change', () => renderAttendanceRayonOptions(''));
+    els.attendancePeriod.addEventListener('change', updateAttendanceFilterVisibility);
+    els.btnLoadAttendance.addEventListener('click', loadAdminAttendance);
 
     // Horaires
     const dayLabels = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -2559,9 +2949,11 @@ $user = get_auth_user();
     ensureWeekDefault();
     ensureHoursViewWeekDefault();
     ensurePayrollPeriodDefault();
+    ensureAttendanceDatesDefault();
     updateRecurrenceSlotOptions(1, 1);
     updateHoursModeVisibility();
     updateHoursViewVisibility();
+    updateAttendanceFilterVisibility();
     updateDeleteWeekButton();
     showHoursSection('editor');
     renderHoursGrid([]);
