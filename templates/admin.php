@@ -1363,6 +1363,8 @@ $user = get_auth_user();
 
       if (wanted && departmentsCache.some(d => String(d.id) === wanted)) {
         els.attendanceDepartment.value = wanted;
+      } else if (departmentsCache.length) {
+        els.attendanceDepartment.value = String(departmentsCache[0].id);
       }
     }
 
@@ -1378,6 +1380,8 @@ $user = get_auth_user();
 
       if (wanted && empCache.some(e => String(e.id) === wanted)) {
         els.attendanceEmployee.value = wanted;
+      } else if (empCache.length) {
+        els.attendanceEmployee.value = String(empCache[0].id);
       }
     }
 
@@ -1395,6 +1399,8 @@ $user = get_auth_user();
 
       if (wanted && rayons.some(r => String(r.name) === wanted)) {
         els.attendanceRayon.value = wanted;
+      } else if (rayons.length) {
+        els.attendanceRayon.value = String(rayons[0].name || '');
       }
     }
 

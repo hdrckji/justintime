@@ -3,6 +3,18 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/payroll_helpers.php';
 
+function format_dashboard_day_label(string $dateIso): string
+{
+    static $weekdays = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+
+    $ts = strtotime($dateIso);
+    if ($ts === false) {
+        return $dateIso;
+    }
+
+    return $weekdays[(int) date('w', $ts)] . ' ' . date('d/m', $ts);
+}
+
 function table_exists(PDO $pdo, string $table): bool
 {
     $stmt = $pdo->prepare(
@@ -220,7 +232,7 @@ try {
                 'date' => $dateIso,
                 'weekday' => (int) date('w', strtotime($dateIso) ?: time()),
                 'day_number' => (int) date('j', strtotime($dateIso) ?: time()),
-                'label' => strftime('%a %d/%m', strtotime($dateIso) ?: time()),
+                'label' => format_dashboard_day_label($dateIso),
                 'worked_hours' => $summary['worked_hours'],
                 'first_in' => $summary['first_in'],
                 'last_out' => $summary['last_out'],

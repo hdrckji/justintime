@@ -5,6 +5,18 @@ require_once __DIR__ . '/payroll_helpers.php';
 
 require_login('admin');
 
+function format_admin_attendance_day_label(string $dateIso): string
+{
+    static $weekdays = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+    $ts = strtotime($dateIso);
+    if ($ts === false) {
+        return $dateIso;
+    }
+
+    return $weekdays[(int) date('w', $ts)] . ' ' . date('d/m/Y', $ts);
+}
+
 function resolve_admin_attendance_period(array $query): array
 {
     $period = trim((string) ($query['period'] ?? 'day'));
@@ -341,7 +353,7 @@ try {
 
         $days[] = [
             'date' => $dateIso,
-            'label' => strftime('%A %d/%m/%Y', strtotime($dateIso) ?: time()),
+            'label' => format_admin_attendance_day_label($dateIso),
             'weekday' => (int) date('w', strtotime($dateIso) ?: time()),
             'people_count' => count(array_filter($people, static function (array $person): bool {
                 return (int) ($person['event_count'] ?? 0) > 0;
