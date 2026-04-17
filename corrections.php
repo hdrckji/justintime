@@ -34,6 +34,46 @@ if (($user['role'] ?? '') === 'employee') {
       font: inherit;
     }
     .corr-toolbar label { font-weight: 600; font-size: 0.9rem; color: var(--ink-soft); }
+    .corr-inline-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: end;
+      margin-bottom: 1rem;
+    }
+    .corr-inline-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 220px;
+      flex: 1 1 220px;
+    }
+    .corr-inline-field label {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+    }
+    .corr-inline-field select,
+    .corr-inline-field input {
+      padding: 0.55rem 0.8rem;
+      background: var(--surface-2);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+    }
+    .corr-search-panel {
+      padding: 1rem;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-bottom: 1rem;
+    }
+    .corr-search-help {
+      margin: 0 0 0.9rem;
+      color: var(--ink-soft);
+      font-size: 0.9rem;
+    }
 
     /* ------- tabs ------- */
     .corr-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
@@ -68,6 +108,10 @@ if (($user['role'] ?? '') === 'employee') {
       border-radius: 12px;
       overflow: hidden;
     }
+    .anom-card.pending-validation {
+      border-color: rgba(91,141,239,0.45);
+      box-shadow: inset 0 0 0 1px rgba(91,141,239,0.12);
+    }
     .anom-header {
       display: flex;
       align-items: center;
@@ -88,8 +132,30 @@ if (($user['role'] ?? '') === 'employee') {
     }
     .badge-unpaired  { background: rgba(255,160,0,0.18); color: #ffaa00; }
     .badge-unscheduled { background: rgba(91,141,239,0.18); color: var(--accent); }
+    .badge-pending { background: rgba(0,200,100,0.14); color: #00c864; }
 
     .anom-events { padding: 0.5rem 1rem 0.75rem; }
+    .anom-validation {
+      margin: 0.25rem 0 0.75rem;
+      padding: 0.7rem 0.8rem;
+      border-radius: 10px;
+      border: 1px solid rgba(91,141,239,0.28);
+      background: rgba(91,141,239,0.08);
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .anom-validation-text {
+      color: var(--ink);
+      font-size: 0.88rem;
+    }
+    .anom-validation-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
 
     /* ------- event rows ------- */
     .ev-row {
@@ -216,6 +282,7 @@ if (($user['role'] ?? '') === 'employee') {
     @media (max-width: 600px) {
       .anom-header { gap: 0.4rem; }
       .ev-row { font-size: 0.85rem; }
+      .corr-inline-field { min-width: 100%; }
     }
   </style>
 </head>
@@ -264,6 +331,7 @@ if (($user['role'] ?? '') === 'employee') {
       <div class="corr-tabs">
         <button class="corr-tab active" data-tab="unpaired">⚠️ Non appairés</button>
         <button class="corr-tab" data-tab="unscheduled">📅 Hors planning</button>
+        <button class="corr-tab" data-tab="browse">🔎 Recherche libre</button>
       </div>
 
       <!-- panels -->
@@ -272,6 +340,27 @@ if (($user['role'] ?? '') === 'employee') {
       </div>
       <div id="panel-unscheduled" style="display:none;">
         <div class="corr-loading">Chargement…</div>
+      </div>
+      <div id="panel-browse" style="display:none;">
+        <div class="corr-search-panel">
+          <p class="corr-search-help">Retrouve et modifie les pointages d’un collaborateur même si aucune anomalie n’a été détectée.</p>
+          <div class="corr-inline-form">
+            <div class="corr-inline-field">
+              <label for="browse-employee">Collaborateur</label>
+              <select id="browse-employee">
+                <option value="">Chargement…</option>
+              </select>
+            </div>
+            <div class="corr-inline-field">
+              <label for="browse-day">Date</label>
+              <input id="browse-day" type="date" />
+            </div>
+            <button class="btn-xs save" id="btn-browse-search" style="padding:0.55rem 1rem;font-size:0.88rem;">Afficher les pointages</button>
+          </div>
+        </div>
+        <div id="panel-browse-results">
+          <div class="empty-state"><span>🔎</span> Choisis un collaborateur et une date pour afficher ses pointages.</div>
+        </div>
       </div>
     </div>
   </main>
@@ -285,7 +374,7 @@ if (($user['role'] ?? '') === 'employee') {
     const API = 'api/attendance_corrections.php';
     const DAY_FR = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
 
-    let state = { unpaired: [], unscheduled: [], days: 30 };
+    let state = { unpaired: [], unscheduled: [], browse: [], employees: [], days: 30 };
     let activeTab = 'unpaired';
 
     // ----------------------------------------------------------------- utils -
@@ -319,6 +408,30 @@ if (($user['role'] ?? '') === 'employee') {
       return ts.substring(0, 16).replace(' ', 'T');
     }
 
+    function todayIso() {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2,'0');
+      const day = String(d.getDate()).padStart(2,'0');
+      return `${year}-${month}-${day}`;
+    }
+
+    async function loadEmployees() {
+      try {
+        const res = await fetch(`${API}?action=employees`);
+        const data = await res.json();
+        if (!res.ok) { toast(data.error || 'Erreur serveur', 'error'); return; }
+        state.employees = data.employees || [];
+        const select = document.getElementById('browse-employee');
+        if (!select) return;
+        select.innerHTML = '<option value="">Choisir un collaborateur</option>' + state.employees
+          .map(emp => `<option value="${emp.id}">${esc(emp.name || 'Employé')}</option>`)
+          .join('');
+      } catch (_) {
+        toast('Impossible de charger les collaborateurs.', 'error');
+      }
+    }
+
     // ----------------------------------------------------------------- fetch -
     async function loadAnomalies() {
       const days = parseInt(document.getElementById('days-select').value, 10);
@@ -330,7 +443,7 @@ if (($user['role'] ?? '') === 'employee') {
         const res  = await fetch(`${API}?action=anomalies&days=${days}`);
         const data = await res.json();
         if (!res.ok) { toast(data.error || 'Erreur serveur', 'error'); return; }
-        state = { unpaired: data.unpaired || [], unscheduled: data.unscheduled || [], days };
+        state = { ...state, unpaired: data.unpaired || [], unscheduled: data.unscheduled || [], days };
         updateSummary();
         renderTab(activeTab);
       } catch (e) {
@@ -340,22 +453,31 @@ if (($user['role'] ?? '') === 'employee') {
 
     // --------------------------------------------------------------- summary -
     function updateSummary() {
-      const { unpaired, unscheduled } = state;
-      const total = unpaired.length + unscheduled.length;
+      const unpairedOpen = state.unpaired.filter(a => !a.pending_validation).length;
+      const unscheduledOpen = state.unscheduled.filter(a => !a.pending_validation).length;
+      const pending = state.unpaired.filter(a => a.pending_validation).length
+        + state.unscheduled.filter(a => a.pending_validation).length;
+      const total = unpairedOpen + unscheduledOpen;
       document.getElementById('corr-summary').innerHTML = `
         <span class="corr-pill ${total === 0 ? 'ok' : 'warn'}">
           ${total === 0 ? '✅' : '⚠️'} ${total} anomalie${total !== 1 ? 's' : ''} détectée${total !== 1 ? 's' : ''}
         </span>
-        <span class="corr-pill info">⚠️ ${unpaired.length} non appairé${unpaired.length !== 1 ? 's' : ''}</span>
-        <span class="corr-pill info">📅 ${unscheduled.length} hors planning</span>
+        <span class="corr-pill info">⚠️ ${unpairedOpen} non appairé${unpairedOpen !== 1 ? 's' : ''}</span>
+        <span class="corr-pill info">📅 ${unscheduledOpen} hors planning</span>
+        ${pending > 0 ? `<span class="corr-pill ok">🕒 ${pending} correction${pending !== 1 ? 's' : ''} en attente de validation</span>` : ''}
       `;
       // Update tab labels
-      document.querySelector('[data-tab="unpaired"]').textContent    = `⚠️ Non appairés (${unpaired.length})`;
-      document.querySelector('[data-tab="unscheduled"]').textContent = `📅 Hors planning (${unscheduled.length})`;
+      document.querySelector('[data-tab="unpaired"]').textContent    = `⚠️ Non appairés (${state.unpaired.length})`;
+      document.querySelector('[data-tab="unscheduled"]').textContent = `📅 Hors planning (${state.unscheduled.length})`;
     }
 
     // ----------------------------------------------------------------- render -
     function renderTab(tab) {
+      if (tab === 'browse') {
+        renderBrowseResults();
+        return;
+      }
+
       const items = state[tab];
       const container = document.getElementById(`panel-${tab}`);
 
@@ -369,27 +491,54 @@ if (($user['role'] ?? '') === 'employee') {
     }
 
     function buildCard(a, type) {
-      const labelBadge = type === 'unpaired'
-        ? `<span class="anom-badge badge-unpaired">Impair — ${a.cnt_in} arrivée${a.cnt_in !== 1 ? 's' : ''} / ${a.cnt_out} départ${a.cnt_out !== 1 ? 's' : ''}</span>`
-        : `<span class="anom-badge badge-unscheduled">Hors planning — ${DAY_FR[a.day_of_week] ?? ''}</span>`;
+      const labelBadge = a.pending_validation
+        ? `<span class="anom-badge badge-pending">Corrigé — en attente de validation</span>`
+        : type === 'browse'
+          ? `<span class="anom-badge badge-unscheduled">Recherche libre</span>`
+        : type === 'unpaired'
+          ? `<span class="anom-badge badge-unpaired">Impair — ${a.cnt_in} arrivée${a.cnt_in !== 1 ? 's' : ''} / ${a.cnt_out} départ${a.cnt_out !== 1 ? 's' : ''}</span>`
+          : `<span class="anom-badge badge-unscheduled">Hors planning — ${DAY_FR[a.day_of_week] ?? ''}</span>`;
 
-      const evRows = (a.events || []).map(ev => buildEvRow(ev, a)).join('');
+      const evRows = (a.events || []).length
+        ? (a.events || []).map(ev => buildEvRow(ev, a)).join('')
+        : `<div class="ev-row"><span class="ev-src">Aucun pointage restant sur cette journée.</span></div>`;
       const addBtn = `<button class="btn-add-event" data-emp="${a.employee_id}" data-day="${a.day}">+ Ajouter un pointage</button>`;
       const addForm = buildAddForm(a);
+      const validationBlock = a.pending_validation
+        ? `<div class="anom-validation">
+            <div class="anom-validation-text">La correction a résolu cette anomalie. Elle reste visible tant que tu ne la valides pas.</div>
+            <div class="anom-validation-actions">
+              <button class="btn-xs save" onclick="corrValidate(${a.employee_id}, '${a.day}', '${type}')">✅ Valider</button>
+            </div>
+          </div>`
+        : '';
 
       return `
-        <div class="anom-card" data-emp="${a.employee_id}" data-day="${a.day}">
+        <div class="anom-card ${a.pending_validation ? 'pending-validation' : ''}" data-emp="${a.employee_id}" data-day="${a.day}">
           <div class="anom-header">
             <span class="anom-name">${esc(a.employee_name)}</span>
             <span class="anom-date">📅 ${fmtDate(a.day)}</span>
             ${labelBadge}
           </div>
           <div class="anom-events">
+            ${validationBlock}
             <div class="ev-list">${evRows}</div>
             ${addBtn}
             ${addForm}
           </div>
         </div>`;
+    }
+
+    function renderBrowseResults() {
+      const container = document.getElementById('panel-browse-results');
+      if (!container) return;
+
+      if (!state.browse.length) {
+        container.innerHTML = '<div class="empty-state"><span>🔎</span> Choisis un collaborateur et une date pour afficher ses pointages.</div>';
+        return;
+      }
+
+      container.innerHTML = `<div class="anom-list">${state.browse.map(item => buildCard(item, 'browse')).join('')}</div>`;
     }
 
     function buildEvRow(ev, a) {
@@ -494,6 +643,15 @@ if (($user['role'] ?? '') === 'employee') {
       } catch (e) { toast('Erreur réseau.', 'error'); }
     };
 
+    window.corrValidate = function(empId, day, tab) {
+      const idx = state[tab].findIndex(a => a.employee_id === empId && a.day === day);
+      if (idx < 0) return;
+      state[tab].splice(idx, 1);
+      updateSummary();
+      renderTab(activeTab);
+      toast('Correction validée.', 'success');
+    };
+
     // Open add form
     document.addEventListener('click', e => {
       const btn = e.target.closest('.btn-add-event');
@@ -504,6 +662,45 @@ if (($user['role'] ?? '') === 'employee') {
       const form  = document.getElementById(`add-form-${key}`);
       if (form) form.classList.toggle('open');
     });
+
+    async function runBrowseSearch() {
+      const employeeId = Number(document.getElementById('browse-employee')?.value || 0);
+      const day = document.getElementById('browse-day')?.value || '';
+
+      if (!employeeId || !day) {
+        toast('Choisis un collaborateur et une date.', 'error');
+        return;
+      }
+
+      const results = document.getElementById('panel-browse-results');
+      if (results) {
+        results.innerHTML = '<div class="corr-loading">Chargement…</div>';
+      }
+
+      try {
+        const res = await fetch(`${API}?action=search_day&employee_id=${employeeId}&day=${encodeURIComponent(day)}`);
+        const data = await res.json();
+        if (!res.ok) {
+          toast(data.error || 'Erreur serveur', 'error');
+          renderBrowseResults();
+          return;
+        }
+
+        state.browse = [data.result || {
+          employee_id: employeeId,
+          employee_name: '',
+          day,
+          day_of_week: new Date(`${day}T00:00:00`).getDay(),
+          cnt_in: 0,
+          cnt_out: 0,
+          events: [],
+        }];
+        renderBrowseResults();
+      } catch (_) {
+        toast('Impossible de charger les pointages pour cette recherche.', 'error');
+        renderBrowseResults();
+      }
+    }
 
     // ------------------------------------------------------- refresh one card -
     async function refreshCard(empId, day) {
@@ -519,23 +716,32 @@ if (($user['role'] ?? '') === 'employee') {
           const idx = state[tab].findIndex(a => a.employee_id === empId && a.day === day);
           if (idx < 0) return;
 
+          const item = state[tab][idx];
+
           // Re-check pairing
           const cntIn  = newEvents.filter(e => e.event_type === 'in').length;
           const cntOut = newEvents.filter(e => e.event_type === 'out').length;
 
-          if (tab === 'unpaired' && cntIn === cntOut) {
-            // Anomaly resolved
-            state[tab].splice(idx, 1);
-          } else {
-            state[tab][idx].events  = newEvents;
-            state[tab][idx].cnt_in  = cntIn;
-            state[tab][idx].cnt_out = cntOut;
+          item.events = newEvents;
+
+          if (tab === 'unpaired') {
+            item.cnt_in = cntIn;
+            item.cnt_out = cntOut;
+            item.pending_validation = cntIn === cntOut;
           }
 
-          if (tab === 'unscheduled' && newEvents.length === 0) {
-            state[tab].splice(idx, 1);
+          if (tab === 'unscheduled') {
+            item.pending_validation = newEvents.length === 0;
           }
         });
+
+        const browseIdx = state.browse.findIndex(a => a.employee_id === empId && a.day === day);
+        if (browseIdx >= 0) {
+          const browseItem = state.browse[browseIdx];
+          browseItem.events = newEvents;
+          browseItem.cnt_in = newEvents.filter(e => e.event_type === 'in').length;
+          browseItem.cnt_out = newEvents.filter(e => e.event_type === 'out').length;
+        }
 
         updateSummary();
         renderTab(activeTab);
@@ -548,7 +754,7 @@ if (($user['role'] ?? '') === 'employee') {
         document.querySelectorAll('.corr-tab').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeTab = btn.dataset.tab;
-        ['unpaired','unscheduled'].forEach(t => {
+        ['unpaired','unscheduled','browse'].forEach(t => {
           document.getElementById(`panel-${t}`).style.display = t === activeTab ? '' : 'none';
         });
         renderTab(activeTab);
@@ -558,7 +764,10 @@ if (($user['role'] ?? '') === 'employee') {
     // ----------------------------------------------------------------- init -
     document.getElementById('btn-refresh').addEventListener('click', loadAnomalies);
     document.getElementById('days-select').addEventListener('change', loadAnomalies);
+    document.getElementById('btn-browse-search').addEventListener('click', runBrowseSearch);
+    document.getElementById('browse-day').value = todayIso();
 
+    loadEmployees();
     loadAnomalies();
   })();
   </script>

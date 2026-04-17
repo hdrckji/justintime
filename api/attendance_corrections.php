@@ -13,6 +13,38 @@ header('Content-Type: application/json; charset=utf-8');
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+function fetch_employee_names(PDO $pdo): array
+{
+    $rows = $pdo->query(
+        "SELECT id, TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,''))) AS name
+         FROM employees
+         WHERE active = 1
+         ORDER BY last_name, first_name"
+    )->fetchAll(PDO::FETCH_ASSOC);
+
+    $employees = [];
+    foreach ($rows as $row) {
+        $employees[] = [
+            'id' => (int) ($row['id'] ?? 0),
+            'name' => trim((string) ($row['name'] ?? '')),
+        ];
+    }
+
+    return $employees;
+}
+
+function fetch_events_for_day(PDO $pdo, int $employeeId, string $day): array
+{
+    $stmt = $pdo->prepare(
+        'SELECT id, event_type, source, timestamp
+         FROM attendance_events
+         WHERE employee_id = ? AND DATE(timestamp) = ?
+         ORDER BY timestamp ASC'
+    );
+    $stmt->execute([$employeeId, $day]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
 try {
     $pdo = get_pdo();
 
@@ -20,6 +52,58 @@ try {
     if ($method === 'GET') {
         $action = trim((string) ($_GET['action'] ?? 'anomalies'));
         $days   = max(1, min(365, (int) ($_GET['days'] ?? 30)));
+
+        if ($action === 'employees') {
+            json_response(['employees' => fetch_employee_names($pdo)]);
+            exit;
+        }
+
+        if ($action === 'search_day') {
+            $empId = (int) ($_GET['employee_id'] ?? 0);
+            $day = trim((string) ($_GET['day'] ?? ''));
+
+            if ($empId <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) {
+                json_response(['error' => 'Parametres invalides.'], 400);
+                exit;
+            }
+
+            $employeeStmt = $pdo->prepare(
+                "SELECT id, TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,''))) AS name
+                 FROM employees
+                 WHERE id = ? AND active = 1"
+            );
+            $employeeStmt->execute([$empId]);
+            $employee = $employeeStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$employee) {
+                json_response(['error' => 'Employe introuvable.'], 404);
+                exit;
+            }
+
+            $events = fetch_events_for_day($pdo, $empId, $day);
+            $cntIn = 0;
+            $cntOut = 0;
+            foreach ($events as $event) {
+                if (($event['event_type'] ?? '') === 'in') {
+                    $cntIn++;
+                }
+                if (($event['event_type'] ?? '') === 'out') {
+                    $cntOut++;
+                }
+            }
+
+            json_response([
+                'result' => [
+                    'employee_id' => $empId,
+                    'employee_name' => trim((string) ($employee['name'] ?? '')),
+                    'day' => $day,
+                    'day_of_week' => (int) date('w', strtotime($day) ?: time()),
+                    'cnt_in' => $cntIn,
+                    'cnt_out' => $cntOut,
+                    'events' => $events,
+                ],
+            ]);
+            exit;
+        }
 
         // -- day_events: detail of a single employee+date ---------------------
         if ($action === 'day_events') {
@@ -29,14 +113,7 @@ try {
                 json_response(['error' => 'Parametres invalides.'], 400);
                 exit;
             }
-            $stmt = $pdo->prepare(
-                'SELECT id, event_type, source, timestamp
-                 FROM attendance_events
-                 WHERE employee_id = ? AND DATE(timestamp) = ?
-                 ORDER BY timestamp ASC'
-            );
-            $stmt->execute([$empId, $day]);
-            json_response(['events' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+            json_response(['events' => fetch_events_for_day($pdo, $empId, $day)]);
             exit;
         }
 
@@ -133,10 +210,7 @@ try {
             usort($unscheduledAnomalies, static fn ($a, $b) => strcmp($b['day'], $a['day']));
 
             // Enrich with employee names
-            $empRows = $pdo->query(
-                "SELECT id, TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,''))) AS name
-                 FROM employees"
-            )->fetchAll(PDO::FETCH_ASSOC);
+            $empRows = fetch_employee_names($pdo);
             $empMap = [];
             foreach ($empRows as $r) {
                 $empMap[(int) $r['id']] = trim((string) $r['name']);
