@@ -140,6 +140,10 @@ if ($user['role'] === 'employee') {
         gap: 0.6rem;
       }
 
+      .calendar-grid.calendar-grid-custom {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
       .calendar-weekday {
         color: var(--ink-soft);
         font-size: 0.82rem;

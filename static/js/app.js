@@ -77,6 +77,13 @@ function formatDateLabel(isoDate) {
   });
 }
 
+function getLocalDateISO(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function formatHours(value) {
   return Number(value || 0).toLocaleString('fr-FR', {
     minimumFractionDigits: 0,
@@ -196,9 +203,9 @@ function openEmployeeCalendar(employeeId, employeeName) {
 
   calendarState.employeeId = Number(employeeId);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateISO();
   if (els.employeeCalendarPeriod) {
-    els.employeeCalendarPeriod.value = 'custom';
+    els.employeeCalendarPeriod.value = 'week';
   }
   if (els.employeeCalendarAnchor) {
     els.employeeCalendarAnchor.value = today;
@@ -237,7 +244,7 @@ function buildEmployeeCalendarQuery() {
     action: 'employee_calendar',
     employee_id: String(calendarState.employeeId || ''),
     period: els.employeeCalendarPeriod?.value || 'week',
-    anchor_date: els.employeeCalendarAnchor?.value || new Date().toISOString().slice(0, 10),
+    anchor_date: els.employeeCalendarAnchor?.value || getLocalDateISO(),
   });
 
   if ((els.employeeCalendarPeriod?.value || 'week') === 'custom') {
@@ -293,10 +300,14 @@ function renderEmployeeCalendarGrid(days = [], period = {}) {
 
   const weekdays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   const firstWeekday = days[0].weekday === 0 ? 6 : days[0].weekday - 1;
-  const isMonth = period.type === 'month';
+  const useWeekdayGrid = period.type === 'week' || period.type === 'month';
 
-  const headers = weekdays.map((label) => `<div class="calendar-weekday">${label}</div>`).join('');
-  const spacers = isMonth ? Array.from({ length: firstWeekday }, () => '<div class="calendar-spacer"></div>').join('') : '';
+  const headers = useWeekdayGrid
+    ? weekdays.map((label) => `<div class="calendar-weekday">${label}</div>`).join('')
+    : '';
+  const spacers = period.type === 'month'
+    ? Array.from({ length: firstWeekday }, () => '<div class="calendar-spacer"></div>').join('')
+    : '';
 
   const cards = days.map((day) => {
     const eventsHtml = (day.events || []).length
@@ -324,7 +335,8 @@ function renderEmployeeCalendarGrid(days = [], period = {}) {
     `;
   }).join('');
 
-  els.employeeCalendarGrid.innerHTML = `<div class="calendar-grid">${headers}${spacers}${cards}</div>`;
+  const gridClassName = useWeekdayGrid ? 'calendar-grid' : 'calendar-grid calendar-grid-custom';
+  els.employeeCalendarGrid.innerHTML = `<div class="${gridClassName}">${headers}${spacers}${cards}</div>`;
 }
 
 async function loadEmployeeCalendar() {
@@ -339,7 +351,7 @@ async function loadEmployeeCalendar() {
   renderEmployeeCalendarGrid(data.days || [], data.period || {});
 
   if (els.employeeCalendarSubtitle) {
-    const startDate = data.period?.from_date || data.period?.anchor_date || new Date().toISOString().slice(0, 10);
+    const startDate = data.period?.from_date || data.period?.anchor_date || getLocalDateISO();
     const endDate = data.period?.to_date || startDate;
     const periodLabel = startDate === endDate
       ? formatDateLabel(startDate)

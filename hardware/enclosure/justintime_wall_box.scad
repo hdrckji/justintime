@@ -1,7 +1,8 @@
 $fn = 48;
 
-// JustInTime wall enclosure prototype
-// Standard-assumption version for ESP32 + ILI9341 + RC522.
+// JustInTime wall enclosure - semi-precise front prototype.
+// The facade is aligned with confirmed screen + RC522 dimensions.
+// The rear volume stays generic on purpose until the final PCB arrives.
 
 render_mode = "print"; // "print" or "assembled"
 part = "all"; // "all", "shell", "lid"
@@ -10,38 +11,38 @@ show_labels = false;
 clearance = 0.35;
 wall = 2.4;
 front_wall = 2.0;
-rfid_front_wall = 1.2;
+rfid_front_wall = 1.1;
 lid_thickness = 2.6;
 corner_radius = 8;
-rear_open_margin = 10;
+rear_open_margin = 8;
 rear_open_depth = 3.2;
 screw_diameter = 3.0;
 screw_clearance = 3.4;
 pillar_diameter = 9;
-pillar_wall = 2.2;
+corner_screw_offset = 10;
+anchor_overlap = 0.2;
 
-screen_pcb_w = 86;
-screen_pcb_h = 50;
-screen_pcb_t = 2;
-screen_view_w = 58;
-screen_view_h = 44;
-screen_hole_spacing_x = 78;
-screen_hole_spacing_y = 42;
-screen_hole_d = 3.2;
+screen_pcb_w = 44;
+screen_pcb_h = 73;
+screen_pcb_stack_t = 8;
+screen_view_w = 44;
+screen_view_h = 52;
+screen_window_w = 40;
+screen_window_h = screen_view_h + 1.0;
 
-rc522_w = 60;
-rc522_h = 40;
-rc522_t = 1.7;
-rc522_hole_spacing_x = 53;
-rc522_hole_spacing_y = 33;
-rc522_hole_d = 3.2;
+rc522_w = 39;
+rc522_h = 60;
+rc522_stack_t = 7;
+rc522_hole_d = 3.3;
+rc522_mount_hole_d = 2.8;
+rc522_slot_len = 1.4;
+rc522_top_hole_inset_x = 7;
+rc522_top_hole_inset_y = 7;
+rc522_bottom_hole_inset_x = 3;
+rc522_bottom_hole_from_bottom = 15;
 
-esp32_w = 28;
-esp32_h = 55;
-esp32_t = 14;
-esp32_usb_w = 13;
-esp32_usb_h = 8;
-
+usb_opening_w = 16;
+usb_opening_h = 10;
 led_hole_d = 5.2;
 led_spacing = 14;
 buzzer_hole_d = 2.2;
@@ -49,18 +50,39 @@ buzzer_grid_cols = 5;
 buzzer_grid_rows = 3;
 buzzer_grid_pitch = 4;
 
-inner_w = 102;
-inner_h = 160;
-inner_d = 29;
-outer_w = inner_w + wall * 2;
-outer_h = inner_h + wall * 2;
-outer_d = inner_d + front_wall + lid_thickness;
+outer_w = 70;
+outer_h = 186;
+outer_d = 40;
+inner_w = outer_w - wall * 2;
+inner_h = outer_h - wall * 2;
+inner_d = outer_d - front_wall - lid_thickness;
 
-screen_center_y = outer_h - 42;
-rc522_center_y = 62;
-led_center_y = 24;
+screen_top_margin = 14;
+screen_gap_to_rc522 = 12;
+screen_pcb_x = (outer_w - screen_pcb_w) / 2;
+screen_pcb_y = outer_h - screen_top_margin - screen_pcb_h;
+screen_center_y = screen_pcb_y + screen_pcb_h / 2;
+
+rc522_pcb_x = (outer_w - rc522_w) / 2;
+rc522_pcb_y = screen_pcb_y - screen_gap_to_rc522 - rc522_h;
+rc522_center_y = rc522_pcb_y + rc522_h / 2;
+
+led_center_y = 15;
 buzzer_center_x = outer_w / 2;
-buzzer_center_y = 18;
+buzzer_center_y = 23;
+
+screen_support_h = 6;
+screen_side_rail_w = 2.4;
+screen_bottom_stop_h = 2.4;
+screen_support_clear = 0.6;
+support_joint_overlap = 0.2;
+
+function rc522_hole_positions() = [
+  [rc522_top_hole_inset_x, rc522_h - rc522_top_hole_inset_y],
+  [rc522_w - rc522_top_hole_inset_x, rc522_h - rc522_top_hole_inset_y],
+  [rc522_bottom_hole_inset_x, rc522_bottom_hole_from_bottom],
+  [rc522_w - rc522_bottom_hole_inset_x, rc522_bottom_hole_from_bottom]
+];
 
 module shell_body() {
   difference() {
@@ -69,7 +91,7 @@ module shell_body() {
     translate([wall, wall, front_wall])
       rounded_box([inner_w, inner_h, inner_d + 1], max(corner_radius - wall, 1));
 
-    // Rear service opening so electronics can be mounted from the back.
+    // Rear service opening so the internals can stay generic until the final PCB exists.
     translate([
       rear_open_margin,
       rear_open_margin,
@@ -83,19 +105,19 @@ module shell_body() {
 
     // Screen window
     translate([
-      outer_w / 2 - (screen_view_w + 2) / 2,
-      screen_center_y - (screen_view_h + 2) / 2,
+      outer_w / 2 - screen_window_w / 2,
+      screen_center_y - screen_window_h / 2,
       -0.01
     ])
-      cube([screen_view_w + 2, screen_view_h + 2, front_wall + 0.2]);
+      cube([screen_window_w, screen_window_h, front_wall + 0.2]);
 
-    // RFID thin section from inside, keeping only rfid_front_wall at the front
+    // RFID thin section from inside, keeping only rfid_front_wall at the front.
     translate([
-      (outer_w - (rc522_w + 8)) / 2,
-      rc522_center_y - (rc522_h + 8) / 2,
+      rc522_pcb_x - 3,
+      rc522_pcb_y - 3,
       rfid_front_wall
     ])
-      cube([rc522_w + 8, rc522_h + 8, front_wall - rfid_front_wall + 0.2]);
+      cube([rc522_w + 6, rc522_h + 6, front_wall - rfid_front_wall + 0.2]);
 
     // LED holes
     for (dx = [-led_spacing / 2, led_spacing / 2])
@@ -112,10 +134,10 @@ module shell_body() {
         ])
           cylinder(h = front_wall + 0.2, d = buzzer_hole_d);
 
-    // USB opening on bottom face
+    // Generic USB opening on bottom face. Final PCB may require a later adjustment.
     translate([outer_w / 2, wall + 6, outer_d - lid_thickness - 7])
       rotate([90, 0, 0])
-        cube([esp32_usb_w + 3, esp32_usb_h + 2, wall + 0.4], center = true);
+        cube([usb_opening_w, usb_opening_h, wall + 0.4], center = true);
 
     // Lid screw holes pass-through in shell lip area
     for (pos = screw_positions())
@@ -123,28 +145,42 @@ module shell_body() {
         cylinder(h = lid_thickness + 12, d = screw_diameter);
   }
 
-  // Internal pillars for lid screws
+  // Internal pillars for lid screws.
   for (pos = screw_positions())
-    translate([pos[0], pos[1], front_wall + 3])
+    translate([pos[0], pos[1], front_wall - anchor_overlap])
       difference() {
-        cylinder(h = inner_d - 6, d = pillar_diameter);
-        cylinder(h = inner_d - 5.8, d = screw_diameter);
+        cylinder(h = inner_d - 3 + anchor_overlap, d = pillar_diameter);
+        cylinder(h = inner_d - 2.8 + anchor_overlap, d = screw_diameter);
       }
 
-  // Screen standoffs
-  for (sx = [-screen_hole_spacing_x / 2, screen_hole_spacing_x / 2])
-    for (sy = [-screen_hole_spacing_y / 2, screen_hole_spacing_y / 2])
-      translate([outer_w / 2 + sx, screen_center_y + sy, front_wall])
-        screen_standoff();
+  screen_supports();
+  rc522_mounts();
+  cable_guides();
+}
 
-  // RC522 standoffs under the screen
-  for (sx = [-rc522_hole_spacing_x / 2, rc522_hole_spacing_x / 2])
-    for (sy = [-rc522_hole_spacing_y / 2, rc522_hole_spacing_y / 2])
-      translate([outer_w / 2 + sx, rc522_center_y + sy, rfid_front_wall])
-        rc522_standoff();
+module screen_supports() {
+  translate([screen_pcb_x - screen_side_rail_w - screen_support_clear, screen_pcb_y, front_wall - anchor_overlap])
+    cube([screen_side_rail_w, screen_pcb_h, screen_support_h + anchor_overlap]);
 
-  // ESP32 tray and strap slots
-  esp32_tray();
+  translate([screen_pcb_x + screen_pcb_w + screen_support_clear, screen_pcb_y, front_wall - anchor_overlap])
+    cube([screen_side_rail_w, screen_pcb_h, screen_support_h + anchor_overlap]);
+
+  translate([
+    screen_pcb_x - screen_support_clear - support_joint_overlap,
+    screen_pcb_y - screen_bottom_stop_h,
+    front_wall - anchor_overlap
+  ])
+    cube([
+      screen_pcb_w + screen_support_clear * 2 + support_joint_overlap * 2,
+      screen_bottom_stop_h + support_joint_overlap,
+      screen_support_h + anchor_overlap
+    ]);
+}
+
+module rc522_mounts() {
+  for (pos = rc522_hole_positions())
+    translate([rc522_pcb_x + pos[0], rc522_pcb_y + pos[1], rfid_front_wall - anchor_overlap])
+      rc522_standoff();
 }
 
 module lid_panel() {
@@ -158,56 +194,43 @@ module lid_panel() {
   }
 }
 
-module screen_standoff() {
-  difference() {
-    cylinder(h = 6, d = 7);
-    translate([0, 0, -0.01])
-      cylinder(h = 6.2, d = 2.6);
-  }
-}
-
 module rc522_standoff() {
   difference() {
-    cylinder(h = 5, d = 7);
+    cylinder(h = 5.2 + anchor_overlap, d = 8);
     translate([0, 0, -0.01])
-      cylinder(h = 5.2, d = 2.6);
+      slot_hole(5.4 + anchor_overlap, rc522_mount_hole_d, rc522_slot_len);
   }
 }
 
-module esp32_tray() {
-  tray_w = esp32_w + 10;
-  tray_h = esp32_h + 10;
-  tray_t = 2.2;
-  tray_y = 26;
-  tray_z = front_wall + 10;
+module slot_hole(h, d, slot_len) {
+  hull() {
+    translate([-slot_len / 2, 0, 0])
+      cylinder(h = h, d = d);
+    translate([slot_len / 2, 0, 0])
+      cylinder(h = h, d = d);
+  }
+}
 
-  translate([outer_w / 2 - tray_w / 2, tray_y, tray_z])
-    cube([tray_w, tray_h, tray_t]);
+module cable_guides() {
+  guide_w = 18;
+  guide_h = 4;
+  guide_t = 4;
+  guide_base_z = rfid_front_wall - anchor_overlap;
 
-  // Side rails
-  translate([outer_w / 2 - tray_w / 2, tray_y, tray_z + tray_t])
-    cube([2.2, tray_h, 7]);
-  translate([outer_w / 2 + tray_w / 2 - 2.2, tray_y, tray_z + tray_t])
-    cube([2.2, tray_h, 7]);
-
-  // End stop
-  translate([outer_w / 2 - tray_w / 2, tray_y + tray_h - 2.2, tray_z + tray_t])
-    cube([tray_w, 2.2, 5]);
-
-  // Zip tie tabs
-  for (offset = [12, tray_h - 12])
-    translate([outer_w / 2, tray_y + offset, tray_z + tray_t + 3.5])
+  for (y_pos = [18, 34])
+    translate([outer_w / 2 - guide_w / 2, y_pos - guide_h / 2, guide_base_z])
       difference() {
-        cube([tray_w - 6, 4, 4], center = true);
-        cube([tray_w - 18, 2.2, 5], center = true);
+        cube([guide_w, guide_h, guide_t + anchor_overlap]);
+        translate([5, (guide_h - 2.2) / 2, -0.01])
+          cube([guide_w - 10, 2.2, guide_t + anchor_overlap + 0.02]);
       }
 }
 
 function screw_positions() = [
-  [14, 14],
-  [outer_w - 14, 14],
-  [14, outer_h - 14],
-  [outer_w - 14, outer_h - 14]
+  [corner_screw_offset, corner_screw_offset],
+  [outer_w - corner_screw_offset, corner_screw_offset],
+  [corner_screw_offset, outer_h - corner_screw_offset],
+  [outer_w - corner_screw_offset, outer_h - corner_screw_offset]
 ];
 
 module rounded_box(size, radius) {
@@ -254,6 +277,7 @@ if (part == "shell") {
 
 if (show_labels) {
   echo(str("Outer size: ", outer_w, " x ", outer_h, " x ", outer_d, " mm"));
-  echo(str("Screen PCB assumption: ", screen_pcb_w, " x ", screen_pcb_h, " mm"));
-  echo(str("RC522 assumption: ", rc522_w, " x ", rc522_h, " mm"));
+  echo(str("Screen PCB: ", screen_pcb_w, " x ", screen_pcb_h, " mm"));
+  echo(str("Screen window: ", screen_view_w, " x ", screen_view_h, " mm"));
+  echo(str("RC522 PCB: ", rc522_w, " x ", rc522_h, " mm"));
 }
