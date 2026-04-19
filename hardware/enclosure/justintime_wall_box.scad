@@ -13,6 +13,8 @@ wall = 2.4;
 front_wall = 2.0;
 rfid_front_wall = 1.1;
 lid_thickness = 2.6;
+lid_border_height = 6;
+lid_border_wall = 2.4;
 corner_radius = 8;
 rear_open_margin = 8;
 rear_open_depth = 3.2;
@@ -50,6 +52,23 @@ buzzer_grid_cols = 5;
 buzzer_grid_rows = 3;
 buzzer_grid_pitch = 4;
 
+esp32_mount_enabled = true;
+esp32_board_w = 51;
+esp32_board_h = 28;
+esp32_rotated = true;
+esp32_hole_edge_margin = 1;
+esp32_mount_center_x = 39;
+esp32_mount_center_y = 150;
+esp32_mount_pillar_d = 7;
+esp32_mount_hole_d = 2.5;
+esp32_mount_height = 2;
+esp32_usb_side_notch_w = 13;
+esp32_usb_side_notch_h = 5;
+esp32_usb_side_notch_x = esp32_mount_center_x;
+esp32_usb_side_notch_bottom = 0.8;
+esp32_usb_print_support_enabled = true;
+esp32_usb_print_support_w = 1.2;
+
 outer_w = 70;
 outer_h = 186;
 outer_d = 40;
@@ -82,6 +101,28 @@ function rc522_hole_positions() = [
   [rc522_w - rc522_top_hole_inset_x, rc522_h - rc522_top_hole_inset_y],
   [rc522_bottom_hole_inset_x, rc522_bottom_hole_from_bottom],
   [rc522_w - rc522_bottom_hole_inset_x, rc522_bottom_hole_from_bottom]
+];
+
+function esp32_size_x() = esp32_rotated ? esp32_board_h : esp32_board_w;
+function esp32_size_y() = esp32_rotated ? esp32_board_w : esp32_board_h;
+
+function esp32_mount_positions() = [
+  [
+    esp32_mount_center_x - (esp32_size_x() - 2 * (esp32_hole_edge_margin + esp32_mount_hole_d / 2)) / 2,
+    esp32_mount_center_y - (esp32_size_y() - 2 * (esp32_hole_edge_margin + esp32_mount_hole_d / 2)) / 2
+  ],
+  [
+    esp32_mount_center_x + (esp32_size_x() - 2 * (esp32_hole_edge_margin + esp32_mount_hole_d / 2)) / 2,
+    esp32_mount_center_y - (esp32_size_y() - 2 * (esp32_hole_edge_margin + esp32_mount_hole_d / 2)) / 2
+  ],
+  [
+    esp32_mount_center_x - (esp32_size_x() - 2 * (esp32_hole_edge_margin + esp32_mount_hole_d / 2)) / 2,
+    esp32_mount_center_y + (esp32_size_y() - 2 * (esp32_hole_edge_margin + esp32_mount_hole_d / 2)) / 2
+  ],
+  [
+    esp32_mount_center_x + (esp32_size_x() - 2 * (esp32_hole_edge_margin + esp32_mount_hole_d / 2)) / 2,
+    esp32_mount_center_y + (esp32_size_y() - 2 * (esp32_hole_edge_margin + esp32_mount_hole_d / 2)) / 2
+  ]
 ];
 
 module shell_body() {
@@ -184,14 +225,70 @@ module rc522_mounts() {
 }
 
 module lid_panel() {
-  difference() {
-    translate([0, 0, outer_d - lid_thickness])
-      rounded_box([outer_w, outer_h, lid_thickness], corner_radius);
+  union() {
+    difference() {
+      union() {
+        translate([0, 0, outer_d - lid_thickness])
+          rounded_box([outer_w, outer_h, lid_thickness], corner_radius);
 
-    for (pos = screw_positions())
-      translate([pos[0], pos[1], outer_d - lid_thickness - 0.01])
-        cylinder(h = lid_thickness + 0.2, d = screw_clearance);
+        translate([0, 0, outer_d])
+          difference() {
+            rounded_box([outer_w, outer_h, lid_border_height], corner_radius);
+            translate([lid_border_wall, lid_border_wall, -0.01])
+              rounded_box([
+                outer_w - lid_border_wall * 2,
+                outer_h - lid_border_wall * 2,
+                lid_border_height + 0.02
+              ], max(corner_radius - lid_border_wall, 1));
+          }
+      }
+
+      for (pos = screw_positions())
+        translate([pos[0], pos[1], outer_d - lid_thickness - 0.01])
+          cylinder(h = lid_thickness + 0.2, d = screw_clearance);
+
+      if (esp32_mount_enabled)
+        translate([
+          esp32_usb_side_notch_x - esp32_usb_side_notch_w / 2,
+          outer_h - lid_border_wall - 0.01,
+          outer_d + esp32_usb_side_notch_bottom
+        ])
+          cube([
+            esp32_usb_side_notch_w,
+            lid_border_wall + 0.02,
+            esp32_usb_side_notch_h
+          ]);
+    }
+
+    if (esp32_mount_enabled)
+      esp32_mounts();
+
+    if (esp32_mount_enabled && esp32_usb_print_support_enabled)
+      usb_notch_print_support();
   }
+}
+
+module esp32_mounts() {
+  for (pos = esp32_mount_positions())
+    translate([pos[0], pos[1], outer_d])
+      difference() {
+        cylinder(h = esp32_mount_height + anchor_overlap, d = esp32_mount_pillar_d);
+        translate([0, 0, -0.01])
+          cylinder(h = esp32_mount_height + anchor_overlap + 0.02, d = esp32_mount_hole_d);
+      }
+}
+
+module usb_notch_print_support() {
+  translate([
+    esp32_usb_side_notch_x - esp32_usb_print_support_w / 2,
+    outer_h - lid_border_wall,
+    outer_d + esp32_usb_side_notch_bottom
+  ])
+    cube([
+      esp32_usb_print_support_w,
+      lid_border_wall,
+      esp32_usb_side_notch_h
+    ]);
 }
 
 module rc522_standoff() {
@@ -280,4 +377,8 @@ if (show_labels) {
   echo(str("Screen PCB: ", screen_pcb_w, " x ", screen_pcb_h, " mm"));
   echo(str("Screen window: ", screen_view_w, " x ", screen_view_h, " mm"));
   echo(str("RC522 PCB: ", rc522_w, " x ", rc522_h, " mm"));
+  echo(str("Lid border: ", lid_border_height, " mm high, ", lid_border_wall, " mm wall"));
+  echo(str("ESP32 board: ", esp32_board_w, " x ", esp32_board_h, " mm"));
+  echo(str("ESP32 rotated: ", esp32_rotated));
+  echo(str("ESP32 hole edge margin: ", esp32_hole_edge_margin, " mm"));
 }

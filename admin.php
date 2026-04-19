@@ -2000,10 +2000,14 @@ $user = get_auth_user();
       const order = [1, 2, 3, 4, 5, 6, 0];
       els.hoursReferenceGrid.innerHTML = order.map((day) => {
         const existing = rows.find(h => Number(h.day_of_week) === day);
-        const checked = !!existing;
-        const start = existing?.start_time ? String(existing.start_time).slice(0, 5) : '08:00';
-        const end = existing?.end_time ? String(existing.end_time).slice(0, 5) : '17:00';
-        const breakMinutes = Number(existing?.break_minutes ?? 60);
+        const checked = existing ? Boolean(Number(existing.is_working_day ?? 1)) : false;
+        const start = checked
+          ? (existing?.start_time ? String(existing.start_time).slice(0, 5) : '08:00')
+          : '';
+        const end = checked
+          ? (existing?.end_time ? String(existing.end_time).slice(0, 5) : '17:00')
+          : '';
+        const breakMinutes = checked ? Number(existing?.break_minutes ?? 60) : 0;
 
         return `
           <div class="ref-hours-row">
@@ -2018,7 +2022,42 @@ $user = get_auth_user();
         `;
       }).join('');
 
+      syncReferenceDayInputs();
+
       calcAndRenderHoursSummary();
+    }
+
+    function syncReferenceDayInputs() {
+      document.querySelectorAll('.ref-day-enabled').forEach((checkbox) => {
+        const day = checkbox.dataset.day;
+        const enabled = checkbox.checked;
+        const startInput = document.querySelector(`.ref-day-start[data-day="${day}"]`);
+        const endInput = document.querySelector(`.ref-day-end[data-day="${day}"]`);
+        const breakInput = document.querySelector(`.ref-day-break[data-day="${day}"]`);
+
+        if (startInput) {
+          startInput.disabled = !enabled;
+          if (!enabled) {
+            startInput.value = '';
+          } else if (!startInput.value) {
+            startInput.value = '08:00';
+          }
+        }
+
+        if (endInput) {
+          endInput.disabled = !enabled;
+          if (!enabled) {
+            endInput.value = '';
+          } else if (!endInput.value) {
+            endInput.value = '17:00';
+          }
+        }
+
+        if (breakInput) {
+          breakInput.disabled = !enabled;
+          breakInput.value = enabled ? (breakInput.value || '60') : '0';
+        }
+      });
     }
 
     function parseTimeToMinutes(value) {
@@ -2799,7 +2838,10 @@ $user = get_auth_user();
     els.hoursGrid.addEventListener('input', calcAndRenderHoursSummary);
     els.hoursGrid.addEventListener('change', calcAndRenderHoursSummary);
     els.hoursReferenceGrid.addEventListener('input', calcAndRenderHoursSummary);
-    els.hoursReferenceGrid.addEventListener('change', calcAndRenderHoursSummary);
+    els.hoursReferenceGrid.addEventListener('change', () => {
+      syncReferenceDayInputs();
+      calcAndRenderHoursSummary();
+    });
     els.weeklyHoursTotal.addEventListener('input', calcAndRenderHoursSummary);
     els.weeklyHoursTotal.addEventListener('change', calcAndRenderHoursSummary);
     document.querySelectorAll('.weekly-day').forEach((cb) => {
@@ -2879,16 +2921,31 @@ $user = get_auth_user();
 
       if (mode === 'reference') {
         const referenceDays = [];
-        const enabledDays = Array.from(document.querySelectorAll('.ref-day-enabled:checked')).map(cb => Number(cb.dataset.day));
+        const dayCheckboxes = Array.from(document.querySelectorAll('.ref-day-enabled'));
+        const enabledDays = dayCheckboxes.filter(cb => cb.checked).map(cb => Number(cb.dataset.day));
         if (!enabledDays.length) {
           showToast('Selectionnez au moins un jour pour l\'horaire de reference.', true);
           return;
         }
 
-        for (const day of enabledDays) {
+        for (const checkbox of dayCheckboxes) {
+          const day = Number(checkbox.dataset.day);
           const startInput = document.querySelector(`.ref-day-start[data-day="${day}"]`);
           const endInput = document.querySelector(`.ref-day-end[data-day="${day}"]`);
           const breakInput = document.querySelector(`.ref-day-break[data-day="${day}"]`);
+          const isWorkingDay = checkbox.checked;
+
+          if (!isWorkingDay) {
+            referenceDays.push({
+              day,
+              is_working_day: false,
+              start_time: '',
+              end_time: '',
+              break_minutes: 0,
+            });
+            continue;
+          }
+
           const start = startInput ? startInput.value : '';
           const end = endInput ? endInput.value : '';
           const breakMinutes = Math.max(0, parseInt(breakInput ? breakInput.value : '60', 10) || 0);
@@ -2913,6 +2970,7 @@ $user = get_auth_user();
 
           referenceDays.push({
             day,
+            is_working_day: true,
             start_time: start,
             end_time: end,
             break_minutes: breakMinutes,
